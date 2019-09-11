@@ -2,6 +2,12 @@
 
 # Copyright  2018  Johns Hopkins University (Author: Xuankai Chang)
 
+# Begin configuration section
+nj=4
+cmd=run.pl
+
+echo "$0 $@"  # Print the command line for logging
+
 . utils/parse_options.sh
 
 if [ $# -ne 4 ]; then
@@ -20,7 +26,7 @@ if [ $# -ne 4 ]; then
 fi
 
 dir=$1
-wsj0_path=$2
+wsj_path=$2
 wsj_full_wav=$3
 wsj_2mix_wav=$4
 
@@ -37,15 +43,40 @@ wget --continue -O $wdir/create-speaker-mixtures.zip ${url}
 
 unzip ${wdir}/create-speaker-mixtures.zip -d ${dir}
 
+# Backup the old mixture scheme
+mkdir -p ${dir}/wsj0_mixture_scheme_bakup
+mv ${dir}/mix_{2,3}_spk_{cv,tt,tr}.txt ${dir}/wsj0_mixture_scheme_bakup
+tar zxf local/wsj_mix_scheme.tar.gz -C ${dir}
+
+for setname in tr cv tt; do
+  <${dir}/wsj_mix_scheme/mix_2_spk_max_${setname}_mix \
+    awk -F"_" -v dir=${setname} '{print(dir "/" $1 ".wav", $2, dir "/" $3 ".wav", $4)}' \
+    > ${dir}/mix_2_spk_${setname}.txt
+done
+
 sed -i -e "s=/db/processed/public/WSJ0WAV_full=${wsj_full_wav}=" \
        -e "s=/mm1/leroux/wsj0-mix/2speakers=${wsj_2mix_wav}=" \
        -e "s='min','max'='max'=" \
        ${dir}/create_wav_2speakers.m
 
-echo "Extracting WSJ0 wav file."
-local/convert2wav.sh ${wsj0_path} ${wsj_full_wav} || exit 1;
+echo "Extracting WSJ wav files."
+mkdir -p ${wsj_full_wav}/{tr,cv,tt}
+<${wsj_path}/train_si284/wav.scp awk -v wsj_full_wav=${wsj_full_wav} '{ss=""; for (i=2;i<NF;i++) {ss=ss $i" "}; ss=ss wsj_full_wav"/tr/"$1".wav"; print(ss)}' > ${wsj_full_wav}/source_extract.sh
+<${wsj_path}/test_dev93/wav.scp awk -v wsj_full_wav=${wsj_full_wav} '{ss=""; for (i=2;i<NF;i++) {ss=ss $i" "}; ss=ss wsj_full_wav"/cv/"$1".wav"; print(ss)}' >> ${wsj_full_wav}/source_extract.sh
+<${wsj_path}/test_eval92/wav.scp awk -v wsj_full_wav=${wsj_full_wav} '{ss=""; for (i=2;i<NF;i++) {ss=ss $i" "}; ss=ss wsj_full_wav"/tt/"$1".wav"; print(ss)}' >> ${wsj_full_wav}/source_extract.sh
 
-echo "Creating WSJ0-2mix Mixtures."
+split -n l/${nj} --numeric-suffixes=1 ${wsj_full_wav}/source_extract.sh ${wsj_full_wav}/source_extract_split_
+rename 's/_0{1,}([0-9]+)/$1.sh/' ${wsj_full_wav}/source_extract_split_*
+
+for i in $(seq 1 1 ${nj}); do
+  sed -i '1i #!/bin/bash' ${wsj_full_wav}/source_extract_split${i}.sh
+  chmod +x ${wsj_full_wav}/source_extract_split${i}.sh
+done
+
+${cmd} JOB=1:${nj} ${wsj_full_wav}/log/source_extract.JOB.log \
+  ${wsj_full_wav}/source_extract_splitJOB.sh || exit 1;
+
+echo "Creating WSJ-2mix Mixtures."
 
 cat << EOF > ${dir}/mix_matlab.sh
 #!/bin/bash

@@ -34,9 +34,9 @@ from espnet.asr.pytorch_backend.asr import load_trained_model
 import espnet.lm.pytorch_backend.extlm as extlm_pytorch
 from espnet.nets.asr_interface import ASRInterface
 from espnet.nets.pytorch_backend.e2e_asr import pad_list
-from espnet.nets.pytorch_backend.e2e_asr_mix import E2E
 import espnet.nets.pytorch_backend.lm.default as lm_pytorch
 from espnet.utils.deterministic_utils import set_deterministic_pytorch
+from espnet.utils.dynamic_import import dynamic_import
 from espnet.utils.io_utils import LoadInputsAndTargets
 from espnet.utils.training.batchfy import make_batchset
 from espnet.utils.training.iterators import ShufflingEnabler
@@ -150,7 +150,10 @@ def train(args):
         logging.info('Multitask learning mode')
 
     # specify model architecture
-    model = E2E(idim, odim, args)
+    model_class = dynamic_import(args.model_module)
+    model = model_class(idim, odim, args)
+    assert isinstance(model, ASRInterface)
+
     subsampling_factor = model.subsample[0]
 
     if args.rnnlm is not None:
