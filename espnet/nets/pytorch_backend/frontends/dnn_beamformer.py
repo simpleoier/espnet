@@ -10,6 +10,8 @@ from espnet.nets.pytorch_backend.frontends.beamformer \
 from espnet.nets.pytorch_backend.frontends.beamformer \
     import get_power_spectral_density_matrix
 from espnet.nets.pytorch_backend.frontends.mask_estimator import MaskEstimator
+from espnet.nets.pytorch_backend.frontends.mask_estimator_transformer \
+    import MaskEstimator as MaskEstimatorTransformer
 from torch_complex.tensor import ComplexTensor
 
 
@@ -32,9 +34,26 @@ class DNN_Beamformer(torch.nn.Module):
                  dropout_rate=0.0,
                  badim=320,
                  ref_channel: int = -1,
-                 beamformer_type='mvdr'):
+                 beamformer_type='mvdr',
+                 attention_dim=None,
+                 attention_heads=None,
+                 attention_dropout_rate=None,
+                 batt_restr_window=15):
         super().__init__()
-        self.mask = MaskEstimator(btype, bidim, blayers, bunits, bprojs,
+        if btype == 'transformer':
+            self.mask = MaskEstimatorTransformer(btype,
+                idim=bidim,
+                attention_dim=attention_dim,
+                attention_heads=attention_heads,
+                linear_units=bunits,
+                num_blocks=blayers,
+                dropout_rate=dropout_rate,
+                positional_dropout_rate=dropout_rate,
+                attention_dropout_rate=attention_dropout_rate,
+                nmask=bnmask,
+                att_restr_window=batt_restr_window)
+        else:
+            self.mask = MaskEstimator(btype, bidim, blayers, bunits, bprojs,
                                   dropout_rate, nmask=bnmask)
         self.ref = AttentionReference(bidim, badim)
         self.ref_channel = ref_channel
