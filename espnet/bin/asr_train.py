@@ -213,7 +213,7 @@ def get_parser(parser=None, required=True):
                         default=True, help='')
     parser.add_argument('--btype', default='blstmp', type=str,
                         choices=['lstm', 'blstm', 'lstmp', 'blstmp', 'vgglstmp', 'vggblstmp', 'vgglstm', 'vggblstm',
-                                 'gru', 'bgru', 'grup', 'bgrup', 'vgggrup', 'vggbgrup', 'vgggru', 'vggbgru'],
+                                 'gru', 'bgru', 'grup', 'bgrup', 'vgggrup', 'vggbgrup', 'vgggru', 'vggbgru', 'transformer'],
                         help='Type of encoder network architecture '
                              'of the mask estimator for Beamformer.')
     parser.add_argument('--blayers', type=int, default=2,
