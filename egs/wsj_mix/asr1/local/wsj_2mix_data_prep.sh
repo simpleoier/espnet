@@ -25,6 +25,7 @@ done
 for f in $srcdir/mix_2_spk_max_tr_mix $srcdir/mix_2_spk_max_cv_mix $srcdir/mix_2_spk_max_tt_mix; do
   if [ ! -f $f ]; then
     echo "Could not find $f.";
+    echo "Maybe the mixture wavs generation failed."
     exit 1;
   fi
 done
