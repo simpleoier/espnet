@@ -215,7 +215,7 @@ class EncoderMix(torch.nn.Module):
             ) for i in range(num_spkrs)])
         self.encoders_rec = repeat(
             num_blocks_rec,
-            lambda: EncoderLayer(
+            lambda idx: EncoderLayer(
                 attention_dim,
                 MultiHeadedAttention(attention_heads, attention_dim, attention_dropout_rate),
                 positionwise_layer(*positionwise_layer_args),

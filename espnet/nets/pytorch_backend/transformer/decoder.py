@@ -73,7 +73,7 @@ class Decoder(ScorerInterface, torch.nn.Module):
         self.normalize_before = normalize_before
         self.decoders = repeat(
             num_blocks,
-            lambda: DecoderLayer(
+            lambda idx: DecoderLayer(
                 attention_dim,
                 multi_headed_attention(attention_heads, attention_dim, src_attention_dropout_rate,
                                        attention_type, max_span=max_attn_span[min(len(max_attn_span)-1, idx)],
