@@ -5,6 +5,7 @@ from distutils.util import strtobool
 
 import logging
 import math
+import numpy as np
 
 import torch
 
@@ -57,6 +58,24 @@ class E2E(ASRInterface, torch.nn.Module):
                            help='Number of attention transformation dimensions')
         group.add_argument('--aheads', default=4, type=int,
                            help='Number of heads for multi head attention')
+        group.add_argument('--transformer-enc-attn-type', default='self_attn', type=str,
+                           choices=['self_attn', 'self_attn2', 'self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_fixed_span', 'self_attn_adaptive_span2', 'self_attn_dynamic_span2', 'self_attn_fixed_span2', 'self_attn_fixed_span3'],
+                           help='encoder self-attention type')
+        group.add_argument('--transformer-dec-attn-type', default='self_attn', type=str,
+                           choices=['self_attn', 'self_attn2', 'self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_fixed_span', 'self_attn_adaptive_span2', 'self_attn_dynamic_span2', 'self_attn_fixed_span2'],
+                           help='decoder self-attention type')
+        group.add_argument('--enc-max-attn-span', default=[50], type=int, nargs='*',
+                           help="Max dynamic/adaptive span (window) size for self-attention of encoder")
+        group.add_argument('--dec-max-attn-span', default=[50], type=int, nargs='*',
+                           help="Max dynamic/adaptive span (window) size for self-attention of decoder")
+        group.add_argument('--span-init', default=0, type=float,
+                           help="Dynamic/adaptive span (window) initial value")
+        group.add_argument('--span-ratio', default=0.5, type=float,
+                           help="Dynamic/adaptive span (window) left ratio")
+        group.add_argument('--ratio-adaptive', default=False, type=strtobool,
+                           help="Adaptive span ratio.")
+        group.add_argument('--span-loss-coef', default=None, type=float,
+                           help="The coefficient for computing the loss of spanned  attention.")
         # Decoder
         group.add_argument('--dlayers', default=1, type=int,
                            help='Number of decoder layers')
@@ -81,7 +100,12 @@ class E2E(ASRInterface, torch.nn.Module):
             input_layer=args.transformer_input_layer,
             dropout_rate=args.dropout_rate,
             positional_dropout_rate=args.dropout_rate,
-            attention_dropout_rate=args.transformer_attn_dropout_rate
+            attention_dropout_rate=args.transformer_attn_dropout_rate,
+            attention_type=getattr(args, 'transformer_enc_attn_type', 'self_attn'),
+            max_attn_span=getattr(args, 'enc_max_attn_span', [None]),
+            span_init=getattr(args, 'span_init', None),
+            span_ratio=getattr(args, 'span_ratio', None),
+            ratio_adaptive=getattr(args, 'ratio_adaptive', None)
         )
         self.decoder = Decoder(
             odim=odim,
@@ -92,7 +116,12 @@ class E2E(ASRInterface, torch.nn.Module):
             dropout_rate=args.dropout_rate,
             positional_dropout_rate=args.dropout_rate,
             self_attention_dropout_rate=args.transformer_attn_dropout_rate,
-            src_attention_dropout_rate=args.transformer_attn_dropout_rate
+            src_attention_dropout_rate=args.transformer_attn_dropout_rate,
+            attention_type=getattr(args, 'transformer_dec_attn_type', 'self_attn'),
+            max_attn_span=getattr(args, 'dec_max_attn_span', [None]),
+            span_init=getattr(args, 'span_init', None),
+            span_ratio=getattr(args, 'span_ratio', None),
+            ratio_adaptive=getattr(args, 'ratio_adaptive', None)
         )
         self.sos = odim - 1
         self.eos = odim - 1
@@ -121,6 +150,11 @@ class E2E(ASRInterface, torch.nn.Module):
         else:
             self.error_calculator = None
         self.rnnlm = None
+        self.attention_enc_type = getattr(args, 'transformer_enc_attn_type', 'self_attn')
+        self.attention_dec_type = getattr(args, 'transformer_dec_attn_type', 'self_attn')
+        self.span_loss_coef = getattr(args, 'span_loss_coef', None)
+        self.ratio_adaptive = getattr(args, 'ratio_adaptive', None)
+        self.sym_blank = args.sym_blank
 
     def reset_parameters(self, args):
         # initialize parameters
@@ -153,6 +187,13 @@ class E2E(ASRInterface, torch.nn.Module):
         :return: accuracy in attention decoder
         :rtype: float
         '''
+        if self.attention_enc_type in ['self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_adaptive_span2', 'self_attn_fixed_span2', 'self_attn_dynamic_span2']:
+            for layer in self.encoder.encoders:
+                layer.self_attn.clamp_param()
+        if self.attention_dec_type in ['self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_adaptive_span2', 'self_attn_fixed_span2', 'self_attn_dynamic_span2']:
+            for layer in self.decoder.decoders:
+                layer.self_attn.clamp_param()
+
         # 1. forward encoder
         xs_pad = xs_pad[:, :max(ilens)]  # for data parallel
         src_mask = (~make_pad_mask(ilens.tolist())).to(xs_pad.device).unsqueeze(-2)
@@ -204,6 +245,26 @@ class E2E(ASRInterface, torch.nn.Module):
             self.loss = alpha * loss_ctc + (1 - alpha) * loss_att
             loss_att_data = float(loss_att)
             loss_ctc_data = float(loss_ctc)
+        # xkc09 Span attention loss computation
+        # xkc09 Span attention size loss computation
+        loss_span = 0
+        if self.attention_enc_type in ['self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_adaptive_span2', 'self_attn_dynamic_span2']:
+            loss_span += sum([layer.self_attn.get_mean_span() for layer in self.encoder.encoders])
+        if self.attention_dec_type in ['self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_adaptive_span2', 'self_attn_dynamic_span2']:
+            loss_span += sum([layer.self_attn.get_mean_span() for layer in self.decoder.decoders])
+        # xkc09 Span attention ratio loss computation
+        loss_ratio = 0
+        if self.ratio_adaptive:
+            # target_ratio = 0.5
+            if self.attention_enc_type in ['self_attn_adaptive_span2', 'self_attn_fixed_span2', 'self_attn_dynamic_span2']:
+                loss_ratio += sum([1 - layer.self_attn.get_mean_ratio() 
+                                for layer in self.encoder.encoders])
+            if self.attention_dec_type in ['self_attn_adaptive_span2', 'self_attn_fixed_span2', 'self_attn_dynamic_span2']:
+                loss_ratio += sum([1 - layer.self_attn.get_mean_ratio()
+                                for layer in self.decoder.decoders])
+        if (self.attention_enc_type in ['self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_adaptive_span2', 'self_attn_fixed_span2', 'self_attn_dynamic_span2'] or self.attention_dec_type in ['self_attn_dynamic_span', 'self_attn_adaptive_span', 'self_attn_adaptive_span2', 'self_attn_fixed_span2', 'self_attn_dynamic_span2']):
+            if getattr(self, 'span_loss_coef', None):
+                self.loss += (loss_span + loss_ratio) * self.span_loss_coef
 
         loss_data = float(self.loss)
         if loss_data < CTC_LOSS_THRESHOLD and not math.isnan(loss_data):
@@ -424,3 +485,62 @@ class E2E(ASRInterface, torch.nn.Module):
             if isinstance(m, MultiHeadedAttention):
                 ret[name] = m.attn.cpu().numpy()
         return ret
+
+
+    def get_ctc_alignments(self, x, y, char_list):
+        """E2E get alignments of CTC
+
+        :param torch.Tensor x: input acoustic feature (T, D)
+        :param torch.Tensor y: id sequence tensor (L)
+        :param list char_list: list of characters
+        :return: best alignment results
+        :rtype: list
+        """
+        def interpolate_blank(l, blank_id=0):
+            l = np.expand_dims(l, 1)
+            zero = np.zeros((l.shape[0], 1), dtype=np.int64)
+            l = np.concatenate([zero, l], axis=1)
+            l = l.reshape(-1)
+            l = np.append(l, l[0])
+            return l
+
+        h = self.encode(x).unsqueeze(0)
+        lpc = self.ctc.log_softmax(h)[0]
+
+        blank_id = char_list.index(self.sym_blank)
+        y_int = interpolate_blank(y, blank_id)
+
+        logdelta = np.zeros((lpc.size(0), len(y_int))) - 100000000000.0  # log of zero
+        state_path = np.zeros((lpc.size(0), len(y_int)), dtype=np.int16) - 1  # state path
+
+        logdelta[0, 0] = lpc[0][y_int[0]]
+        logdelta[0, 1] = lpc[0][y_int[1]]
+
+        for t in range(1, lpc.size(0)):
+            for s in range(len(y_int)):
+                if (y_int[s] == blank_id or s<2 or y_int[s] == y_int[s-2]):
+                    candidates = np.array([logdelta[t-1, s], logdelta[t-1, s-1]])
+                    prev_state = [s, s-1]
+                else:
+                    candidates = np.array([logdelta[t-1, s], logdelta[t-1, s-1], logdelta[t-1, s-2]])
+                    prev_state = [s, s-1, s-2]
+                logdelta[t, s] = np.max(candidates) + lpc[t][y_int[s]]
+                state_path[t, s] = prev_state[np.argmax(candidates)]
+        
+        state_seq = -1 * np.ones((lpc.size(0), 1), dtype=np.int16)
+
+        candidates = np.array([logdelta[-1, len(y_int)-1], logdelta[-1, len(y_int)-2]])
+        prev_state = [len(y_int)-1, len(y_int)-2]
+        state_seq[-1] = prev_state[np.argmax(candidates)]
+        for t in range(lpc.size(0)-2, -1, -1):
+            state_seq[t] = state_path[t+1, state_seq[t+1, 0]]
+        
+        output_state_seq = []
+        for t in range(0, lpc.size(0)):
+            output_state_seq.append(y_int[state_seq[t, 0]])
+
+        # orig_seq = []
+        # for t in range(0, len(y)):
+        #     orig_seq.append(char_list[y[t]])
+
+        return output_state_seq

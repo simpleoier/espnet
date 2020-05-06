@@ -542,7 +542,8 @@ class E2E(E2E_ASR, ASRInterface, torch.nn.Module):
                 enhanced[idx] = enhanced[idx].cpu().numpy()
                 mask[idx] = mask[idx].cpu().numpy()
             return enhanced, mask, ilens
-        return enhanced.cpu().numpy(), mask.cpu().numpy(), ilens
+        else:
+            return enhanced.cpu().numpy(), mask.cpu().numpy(), ilens
 
     def calculate_all_attentions(self, xs_pad, ilens, ys_pad):
         """E2E attention calculation.

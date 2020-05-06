@@ -35,7 +35,12 @@ class Frontend(nn.Module):
                  bnmask: int = 2,
                  badim: int = 320,
                  ref_channel: int = -1,
-                 bdropout_rate=0.0):
+                 bdropout_rate=0.0,
+                 #Transformer
+                 attention_dim=None,
+                 attention_heads=None,
+                 attention_dropout_rate=None,
+                 batt_restr_window=15):
         super().__init__()
 
         self.use_beamformer = use_beamformer
@@ -75,7 +80,11 @@ class Frontend(nn.Module):
                                              bnmask=bnmask,
                                              dropout_rate=bdropout_rate,
                                              badim=badim,
-                                             ref_channel=ref_channel)
+                                             ref_channel=ref_channel,
+                                             attention_dim=attention_dim,
+                                             attention_heads=attention_heads,
+                                             attention_dropout_rate=attention_dropout_rate,
+                                             batt_restr_window=batt_restr_window)
         else:
             self.beamformer = None
 
@@ -121,26 +130,55 @@ class Frontend(nn.Module):
 
 
 def frontend_for(args, idim):
-    return Frontend(
-        idim=idim,
-        # WPE options
-        use_wpe=args.use_wpe,
-        wtype=args.wtype,
-        wlayers=args.wlayers,
-        wunits=args.wunits,
-        wprojs=args.wprojs,
-        wdropout_rate=args.wdropout_rate,
-        taps=args.wpe_taps,
-        delay=args.wpe_delay,
-        use_dnn_mask_for_wpe=args.use_dnn_mask_for_wpe,
+    if args.btype == 'transformer':
+        return Frontend(
+            idim=idim,
+            # WPE options
+            use_wpe=args.use_wpe,
+            wtype=args.wtype,
+            wlayers=args.wlayers,
+            wunits=args.wunits,
+            wprojs=args.wprojs,
+            wdropout_rate=args.wdropout_rate,
+            taps=args.wpe_taps,
+            delay=args.wpe_delay,
+            use_dnn_mask_for_wpe=args.use_dnn_mask_for_wpe,
 
-        # Beamformer options
-        use_beamformer=args.use_beamformer,
-        btype=args.btype,
-        blayers=args.blayers,
-        bunits=args.bunits,
-        bprojs=args.bprojs,
-        bnmask=args.bnmask,
-        badim=args.badim,
-        ref_channel=args.ref_channel,
-        bdropout_rate=args.bdropout_rate)
+            # Beamformer options
+            use_beamformer=args.use_beamformer,
+            btype=args.btype,
+            blayers=args.blayers,
+            bunits=args.bunits,
+            bprojs=args.bprojs,
+            bnmask=args.bnmask,
+            badim=args.badim,
+            ref_channel=args.ref_channel,
+            bdropout_rate=args.bdropout_rate,
+            attention_dim=args.adim,
+            attention_heads=args.aheads,
+            attention_dropout_rate=args.transformer_attn_dropout_rate,
+            batt_restr_window=args.beamformer_time_restricted_window)
+    else:
+        return Frontend(
+            idim=idim,
+            # WPE options
+            use_wpe=args.use_wpe,
+            wtype=args.wtype,
+            wlayers=args.wlayers,
+            wunits=args.wunits,
+            wprojs=args.wprojs,
+            wdropout_rate=args.wdropout_rate,
+            taps=args.wpe_taps,
+            delay=args.wpe_delay,
+            use_dnn_mask_for_wpe=args.use_dnn_mask_for_wpe,
+
+            # Beamformer options
+            use_beamformer=args.use_beamformer,
+            btype=args.btype,
+            blayers=args.blayers,
+            bunits=args.bunits,
+            bprojs=args.bprojs,
+            bnmask=args.bnmask,
+            badim=args.badim,
+            ref_channel=args.ref_channel,
+            bdropout_rate=args.bdropout_rate)

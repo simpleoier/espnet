@@ -153,6 +153,7 @@ class GlobalMVN(torch.nn.Module):
         self.norm_vars = norm_vars
 
         self.stats_file = stats_file
+        '''
         stats = np.load(stats_file)
 
         stats = stats.astype(float)
@@ -162,6 +163,23 @@ class GlobalMVN(torch.nn.Module):
         mean = stats[:(len(stats) - 1) // 2] / count
         var = stats[(len(stats) - 1) // 2:-1] / count - mean * mean
         std = np.maximum(np.sqrt(var), eps)
+        '''
+        if stats_file[-3:] == "ark":
+            import kaldiio
+            stats = kaldiio.load_mat(stats_file)
+            count = stats[0][-1]
+            mean = stats[0][: -1] / count
+            std = stats[1][: -1] / count - mean * mean
+        else:
+            stats = np.load(stats_file)
+
+            stats = stats.astype(float)
+            assert (len(stats) - 1) % 2 == 0, stats.shape
+
+            count = stats.flatten()[-1]
+            mean = stats[:(len(stats) - 1) // 2] / count
+            var = stats[(len(stats) - 1) // 2:-1] / count - mean * mean
+            std = np.maximum(np.sqrt(var), eps)
 
         self.register_buffer('bias',
                              torch.from_numpy(-mean.astype(np.float32)))

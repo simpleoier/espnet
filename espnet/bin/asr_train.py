@@ -68,7 +68,7 @@ def get_parser(parser=None, required=True):
     parser.add_argument('--model-module', type=str, default=None,
                         help='model defined module (default: espnet.nets.xxx_backend.e2e_asr:E2E)')
     # loss related
-    parser.add_argument('--ctc_type', default='warpctc', type=str,
+    parser.add_argument('--ctc-type', default='warpctc', type=str,
                         choices=['builtin', 'warpctc'],
                         help='Type of CTC implementation to calculate loss.')
     parser.add_argument('--mtlalpha', default=0.5, type=float,
@@ -213,7 +213,7 @@ def get_parser(parser=None, required=True):
                         default=True, help='')
     parser.add_argument('--btype', default='blstmp', type=str,
                         choices=['lstm', 'blstm', 'lstmp', 'blstmp', 'vgglstmp', 'vggblstmp', 'vgglstm', 'vggblstm',
-                                 'gru', 'bgru', 'grup', 'bgrup', 'vgggrup', 'vggbgrup', 'vgggru', 'vggbgru'],
+                                 'gru', 'bgru', 'grup', 'bgrup', 'vgggrup', 'vggbgrup', 'vgggru', 'vggbgru', 'transformer'],
                         help='Type of encoder network architecture '
                              'of the mask estimator for Beamformer.')
     parser.add_argument('--blayers', type=int, default=2,

@@ -8,8 +8,6 @@ import sys
 
 import numpy as np
 
-from espnet.asr.pytorch_backend.asr import enhance
-
 
 # NOTE: you need this func to generate our sphinx doc
 def get_parser():
@@ -47,6 +45,9 @@ def get_parser():
                         help='Model file parameters to read')
     parser.add_argument('--model-conf', type=str, default=None,
                         help='Model config file')
+    parser.add_argument('--num-spkrs', type=int, default=1,
+                        choices=[1, 2],
+                        help='Number of speakers in the speech. This for multi-speaker mixture.')
 
     # Outputs configuration
     parser.add_argument('--enh-wspecifier', type=str, default=None,
@@ -126,7 +127,12 @@ def main(args):
     # recog
     logging.info('backend = ' + args.backend)
     if args.backend == "pytorch":
-        enhance(args)
+        if args.num_spkrs == 1:
+            from espnet.asr.pytorch_backend.asr import enhance
+            enhance(args)
+        else:
+            from espnet.asr.pytorch_backend.asr_mix import enhance
+            enhance(args)
     else:
         raise ValueError("Only pytorch is supported.")
 

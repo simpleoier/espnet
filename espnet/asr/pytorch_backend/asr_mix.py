@@ -23,6 +23,7 @@ from espnet.asr.asr_utils import adadelta_eps_decay
 
 from espnet.asr.asr_utils import CompareValueTrigger
 from espnet.asr.asr_utils import get_model_conf
+from espnet.asr.asr_utils import plot_spectrogram
 from espnet.asr.asr_utils import restore_snapshot
 from espnet.asr.asr_utils import snapshot_object
 from espnet.asr.asr_utils import torch_load
@@ -35,6 +36,9 @@ import espnet.lm.pytorch_backend.extlm as extlm_pytorch
 from espnet.nets.asr_interface import ASRInterface
 from espnet.nets.pytorch_backend.e2e_asr import pad_list
 import espnet.nets.pytorch_backend.lm.default as lm_pytorch
+from espnet.transform.spectrogram import IStft
+from espnet.transform.transformation import Transformation
+from espnet.utils.cli_writers import file_writer_helper
 from espnet.utils.deterministic_utils import set_deterministic_pytorch
 from espnet.utils.dynamic_import import dynamic_import
 from espnet.utils.io_utils import LoadInputsAndTargets
@@ -66,7 +70,7 @@ class CustomConverter(object):
         self.dtype = dtype
 
     def __call__(self, batch, device):
-        """Transform a batch and send it to a device.
+        """Transforms a batch and send it to a device.
 
         Args:
             batch (list(tuple(str, dict[str, dict[str, Any]]))): The batch to transform.
@@ -116,6 +120,33 @@ class CustomConverter(object):
         return xs_pad, ilens, ys_pad
 
 
+def load_pretrained_modules(model_path, target_model, match_keys, match_freeze_keys=None, freeze_parms=False):
+    src_model_dict = torch.load(model_path, map_location=lambda storage, loc: storage)
+    tgt_model_dict = target_model.state_dict()
+
+    from collections import OrderedDict
+    import re
+    filtered_keys = filter(lambda x: re.search(match_keys, x[0]), src_model_dict.items())
+    filtered_dict = OrderedDict()
+    for key, v in filtered_keys:
+        filtered_dict[key] = v
+
+    tgt_model_dict.update(filtered_dict)
+    target_model.load_state_dict(tgt_model_dict)
+
+    if match_freeze_keys:
+        filtered_keys = list(filter(lambda x: re.search(match_freeze_keys, x[0]), src_model_dict.items()))
+    else:
+        filtered_keys = list(filter(lambda x: re.search(match_keys, x[0]), src_model_dict.items()))
+
+    if freeze_parms:
+        for name, param in target_model.named_parameters():
+            if name in filtered_keys:
+                param.requires_grad = False
+
+    return target_model
+
+
 def train(args):
     """Train with the given args.
 
@@ -153,6 +184,12 @@ def train(args):
     model_class = dynamic_import(args.model_module)
     model = model_class(idim, odim, args)
     assert isinstance(model, ASRInterface)
+
+    # if args.btype != 'transformer':
+    #     load_pretrained_modules('/export/c09/xkc09/asr/wsj_2mix_multi_channel/asr2/exp/tr_spatialized_anechoic_pytorch_b3_unit512_proj512_vggblstmp_e3_subsample1_2_2_1_1_unit1024_proj1024_d1_unit300_location_spafalse_aconvc10_aconvf100_mtlalpha0.2_adadelta_sampprob0.0_bs8_mli500_mlo150_lsmunigram0.05_delta/results/model.acc.best', model, r'frontend', True)
+
+    #load_pretrained_modules('/export/c09/xkc09/tools/espnet/egs/wsj/asr1/exp/train_si284_pytorch_train_transformer_no_preprocess/results/model.last10.avg.best', model, r'(encoder|decoder|ctc)', r'(encoder|decoder)', True)
+    #load_pretrained_modules('/export/c09/xkc09/tools/espnet/egs/wsj/asr1/exp/train_si284_pytorch_train_transformer_fbank_no_preprocess/results/model.last10.avg.best', model, r'(encoder|decoder|ctc)', False)
 
     subsampling_factor = model.subsample[0]
 
@@ -294,6 +331,16 @@ def train(args):
     if use_sortagrad:
         trainer.extend(ShufflingEnabler([train_iter]),
                        trigger=(args.sortagrad if args.sortagrad != -1 else args.epochs, 'epoch'))
+
+    # Frontend require_grad after 15 epochs
+    # def resume_require_grad():
+    #     from chainer.training import extension
+    #     @extension.make_extension(trigger=(6, 'epoch'), priority=-100)
+    #     def set_require_grad(trainer):
+    #         for parm in trainer.updater.model.parameters():
+    #             parm.requires_grad = True
+    #     return set_require_grad
+    # trainer.extend(resume_require_grad(), trigger=(15, 'epoch'))
 
     # Resume from a snapshot
     if args.resume:
@@ -486,3 +533,195 @@ def recog(args):
 
     with open(args.result_label, 'wb') as f:
         f.write(json.dumps({'utts': new_js}, indent=4, ensure_ascii=False, sort_keys=True).encode('utf_8'))
+
+
+def enhance(args):
+    """Dumping enhanced speech and mask.
+
+    Args:
+        args (namespace): The program arguments.
+    """
+    set_deterministic_pytorch(args)
+    # read training config
+    idim, odim, train_args = get_model_conf(args.model, args.model_conf)
+
+    # load trained model parameters
+    logging.info('reading model parameters from ' + args.model)
+    model_class = dynamic_import(train_args.model_module)
+    model = model_class(idim, odim, train_args)
+    assert isinstance(model, ASRInterface)
+    torch_load(args.model, model)
+    model.recog_args = args
+
+    # gpu
+    if args.ngpu == 1:
+        gpu_id = list(range(args.ngpu))
+        logging.info('gpu id: ' + str(gpu_id))
+        model.cuda()
+
+    # read json data
+    with open(args.recog_json, 'rb') as f:
+        js = json.load(f)['utts']
+
+    load_inputs_and_targets = LoadInputsAndTargets(
+        mode='asr', load_output=False, sort_in_input_length=False,
+        preprocess_conf=None  # Apply pre_process in outer func
+    )
+    if args.batchsize == 0:
+        args.batchsize = 1
+
+    # Creates writers for outputs from the network
+    if args.enh_wspecifier is not None:
+        enh_writer = file_writer_helper(args.enh_wspecifier,
+                                        filetype=args.enh_filetype)
+    else:
+        enh_writer = None
+
+    # Creates a Transformation instance
+    preprocess_conf = (
+        train_args.preprocess_conf if args.preprocess_conf is None
+        else args.preprocess_conf)
+    if preprocess_conf is not None:
+        logging.info('Use preprocessing'.format(preprocess_conf))
+        transform = Transformation(preprocess_conf)
+    else:
+        transform = None
+
+    # Creates a IStft instance
+    istft = None
+    frame_shift = args.istft_n_shift  # Used for plot the spectrogram
+    if args.apply_istft:
+        if preprocess_conf is not None:
+            # Read the conffile and find stft setting
+            with open(preprocess_conf) as f:
+                # Json format: e.g.
+                #    {"process": [{"type": "stft",
+                #                  "win_length": 400,
+                #                  "n_fft": 512, "n_shift": 160,
+                #                  "window": "han"},
+                #                 {"type": "foo", ...}, ...]}
+                conf = json.load(f)
+                assert 'process' in conf, conf
+                # Find stft setting
+                for p in conf['process']:
+                    if p['type'] == 'stft':
+                        istft = IStft(win_length=p['win_length'],
+                                      n_shift=p['n_shift'],
+                                      window=p.get('window', 'hann'))
+                        logging.info('stft is found in {}. '
+                                     'Setting istft config from it\n{}'
+                                     .format(preprocess_conf, istft))
+                        frame_shift = p['n_shift']
+                        break
+        if istft is None:
+            # Set from command line arguments
+            istft = IStft(win_length=args.istft_win_length,
+                          n_shift=args.istft_n_shift,
+                          window=args.istft_window)
+            logging.info('Setting istft config from the command line args\n{}'
+                         .format(istft))
+
+    # sort data
+    keys = list(js.keys())
+    feat_lens = [js[key]['input'][0]['shape'][0] for key in keys]
+    sorted_index = sorted(range(len(feat_lens)), key=lambda i: -feat_lens[i])
+    keys = [keys[i] for i in sorted_index]
+
+    def grouper(n, iterable, fillvalue=None):
+        kargs = [iter(iterable)] * n
+        return zip_longest(*kargs, fillvalue=fillvalue)
+
+    num_images = 0
+    if not os.path.exists(args.image_dir):
+        os.makedirs(args.image_dir)
+
+    for names in grouper(args.batchsize, keys, None):
+        batch = [(name, js[name]) for name in names]
+
+        # May be in time region: (Batch, [Time, Channel])
+        org_feats = load_inputs_and_targets(batch)[0]
+        if transform is not None:
+            # May be in time-freq region: : (Batch, [Time, Channel, Freq])
+            feats = transform(org_feats, train=False)
+        else:
+            feats = org_feats
+
+        with torch.no_grad():
+            enhanced, mask, ilens = model.enhance(feats)
+
+        if args.image_dir is not None:
+            import matplotlib.pyplot as plt
+            plt.figure(figsize=(20, 10))
+
+        for idx, name in enumerate(names):
+            feat = feats[idx]
+            #np.save(os.path.join(args.image_dir, name + f'feat.npy'), feat)
+            for spkr_id in range(args.num_spkrs):
+                # Assuming mask, feats : [Batch, Time, Channel. Freq]
+                #          enhanced    : [Batch, Time, Freq]
+                enh = enhanced[spkr_id][idx][:ilens[idx]]
+                mas = mask[spkr_id][idx][:ilens[idx]]
+                #np.save(os.path.join(args.image_dir, name + f'.enh.spkr{spkr_id}.npy'), enh)
+                #np.save(os.path.join(args.image_dir, name + f'.mas.spkr{spkr_id}.npy'), mas)
+
+                # Plot spectrogram
+                if args.image_dir is not None and num_images < args.num_images * 2:
+                    num_images += 1
+                    ref_ch = 0
+
+                    plt.subplot(4, 1, 1)
+                    plt.title('Mask [speaker_id={}, ref={}ch]'.format(spkr_id+1, ref_ch))
+                    mas = mas[:, ref_ch]
+                    mas /= np.median(mas,axis=0)  # mask norm by median (Credit to Jonathan Le Roux)
+                    plot_spectrogram(plt, mas.T, fs=None,
+                                    mode='db', frame_shift=None,
+                                    bottom=False, labelbottom=False, cmap='viridis')
+
+                    plt.subplot(4, 1, 2)
+                    plt.title('Noisy speech [ref={}ch]'.format(ref_ch))
+                    plot_spectrogram(plt, feat[:, ref_ch].T, fs=None,
+                                    mode='db', frame_shift=None,
+                                    bottom=False, labelbottom=False, cmap='viridis')
+
+                    plt.subplot(4, 1, 3)
+                    plt.title('Masked speech [speaker_id={}, ref={}ch]'.format(spkr_id+1, ref_ch))
+                    plot_spectrogram(
+                        plt, (feat[:, ref_ch] * mas).T,
+                        frame_shift=None,
+                        fs=None, mode='db', bottom=False, labelbottom=False, cmap='viridis')
+
+                    plt.subplot(4, 1, 4)
+                    plt.title('Enhanced speech [speaker_id={}]'.format(spkr_id+1))
+                    plot_spectrogram(plt, enh.T, fs=None,
+                                    mode='db', frame_shift=None, cmap='viridis')
+
+                    plt.savefig(os.path.join(args.image_dir, name + f'.spkr{spkr_id}.png'))
+                    plt.clf()
+
+                # Write enhanced wave files
+                if enh_writer is not None:
+                    if istft is not None:
+                        enh = istft(enh)
+                    else:
+                        enh = enh
+
+                    if args.keep_length:
+                        if len(org_feats[idx]) < len(enh):
+                            # Truncate the frames added by stft padding
+                            enh = enh[:len(org_feats[idx])]
+                        elif len(org_feats) > len(enh):
+                            padwidth = [(0, (len(org_feats[idx]) - len(enh)))] \
+                                + [(0, 0)] * (enh.ndim - 1)
+                            enh = np.pad(enh, padwidth, mode='constant')
+
+                    wav_name = name + '_' + str(spkr_id)
+                    if args.enh_filetype in ('sound', 'sound.hdf5'):
+                        enh_writer[wav_name] = (args.fs, enh)
+                    else:
+                        # Hint: To dump stft_signal, mask or etc,
+                        # enh_filetype='hdf5' might be convenient.
+                        enh_writer[wav_name] = enh
+
+                if num_images >= args.num_images and enh_writer is None:
+                    logging.info('Breaking the process.')
+                    break

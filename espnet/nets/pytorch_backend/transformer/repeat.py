@@ -18,4 +18,4 @@ def repeat(N, fn):
     :return: repeated modules
     :rtype: MultiSequential
     """
-    return MultiSequential(*[fn() for _ in range(N)])
+    return MultiSequential(*[fn() for i in range(N)])

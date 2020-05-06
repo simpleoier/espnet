@@ -1,6 +1,7 @@
 import torch
 
 from espnet.nets.pytorch_backend.transformer.attention import MultiHeadedAttention
+from espnet.nets.pytorch_backend.transformer.attention import multi_headed_attention
 from espnet.nets.pytorch_backend.transformer.decoder_layer import DecoderLayer
 from espnet.nets.pytorch_backend.transformer.embedding import PositionalEncoding
 from espnet.nets.pytorch_backend.transformer.layer_norm import LayerNorm
@@ -42,7 +43,12 @@ class Decoder(ScorerInterface, torch.nn.Module):
                  use_output_layer=True,
                  pos_enc_class=PositionalEncoding,
                  normalize_before=True,
-                 concat_after=False):
+                 concat_after=False,
+                 attention_type="self_attn",
+                 max_attn_span=[None],
+                 span_init=0,
+                 span_ratio=0.5,
+                 ratio_adaptive=False):
         torch.nn.Module.__init__(self)
         if input_layer == "embed":
             self.embed = torch.nn.Sequential(
@@ -69,8 +75,11 @@ class Decoder(ScorerInterface, torch.nn.Module):
             num_blocks,
             lambda: DecoderLayer(
                 attention_dim,
+                multi_headed_attention(attention_heads, attention_dim, src_attention_dropout_rate,
+                                       attention_type, max_span=max_attn_span[min(len(max_attn_span)-1, idx)],
+                                       span_init=span_init, span_ratio=span_ratio, ratio_adaptive=ratio_adaptive,
+                                       causal_flag=True),
                 MultiHeadedAttention(attention_heads, attention_dim, self_attention_dropout_rate),
-                MultiHeadedAttention(attention_heads, attention_dim, src_attention_dropout_rate),
                 PositionwiseFeedForward(attention_dim, linear_units, dropout_rate),
                 dropout_rate,
                 normalize_before,
