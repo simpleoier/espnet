@@ -1,0 +1,52 @@
+batch_type: folded
+batch_size: 20
+init: xavier_uniform
+max_epoch: 50
+patience: 4
+val_scheduler_criterion:
+- valid
+- loss
+best_model_criterion:
+-   - valid
+    - acc
+    - max
+keep_nbest_models: 1
+
+frontend: default
+frontend_conf:
+    fs: 24000
+    n_fft: 512
+    win_length: 512
+    hop_length: 64
+
+encoder: rnn
+encoder_conf:
+    rnn_type: lstm
+    bidirectional: true
+    use_projection: true
+    num_layers: 4
+    hidden_size: 1024
+    output_size: 1024
+    dropout: 0.0
+    subsample:
+        - 1
+        - 1
+        - 1
+        - 1
+
+model_conf:
+    lsm_weight: 0.0
+    num_spkrs: 2
+
+optim: adadelta
+optim_conf:
+    lr: 0.1
+    rho: 0.95
+    eps: 1.0e-08
+    weight_decay: 0
+scheduler: reducelronplateau
+scheduler_conf:
+    mode: min
+    factor: 0.5
+    patience: 1
+

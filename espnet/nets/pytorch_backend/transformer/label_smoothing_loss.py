@@ -27,6 +27,7 @@ class LabelSmoothingLoss(nn.Module):
         smoothing,
         normalize_length=False,
         criterion=nn.KLDivLoss(reduction="none"),
+        reduce=True,
     ):
         """Construct an LabelSmoothingLoss object."""
         super(LabelSmoothingLoss, self).__init__()
@@ -37,6 +38,7 @@ class LabelSmoothingLoss(nn.Module):
         self.size = size
         self.true_dist = None
         self.normalize_length = normalize_length
+        self.reduce = reduce
 
     def forward(self, x, target):
         """Compute loss between x and target.
@@ -59,5 +61,8 @@ class LabelSmoothingLoss(nn.Module):
             target = target.masked_fill(ignore, 0)  # avoid -1 index
             true_dist.scatter_(1, target.unsqueeze(1), self.confidence)
         kl = self.criterion(torch.log_softmax(x, dim=1), true_dist)
-        denom = total if self.normalize_length else batch_size
-        return kl.masked_fill(ignore.unsqueeze(1), 0).sum() / denom
+        if self.reduce:
+            denom = total if self.normalize_length else batch_size
+            return kl.masked_fill(ignore.unsqueeze(1), 0).sum() / denom
+        else:
+            return kl.masked_fill(ignore.unsqueeze(1), 0).sum(dim=1)
