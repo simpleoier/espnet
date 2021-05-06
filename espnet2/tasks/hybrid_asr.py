@@ -12,7 +12,6 @@ import torch
 from typeguard import check_argument_types
 from typeguard import check_return_type
 
-from espnet2.hybrid_asr.cross_entropy import CrossEntropy
 from espnet2.asr.decoder.abs_decoder import AbsDecoder
 from espnet2.asr.decoder.rnn_decoder import RNNDecoder
 from espnet2.asr.decoder.transformer_decoder import (

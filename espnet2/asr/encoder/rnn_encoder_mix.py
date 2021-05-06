@@ -92,7 +92,7 @@ class RNNEncoderMix(AbsEncoder):
                         num_layers_rec,
                         hidden_size,
                         output_size,
-                        subsample[num_layers_rec:],
+                        subsample[num_layers_sd:],
                         dropout,
                         typ=rnn_type,
                     )

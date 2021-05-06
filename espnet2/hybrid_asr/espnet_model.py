@@ -17,7 +17,6 @@ from espnet.nets.pytorch_backend.transformer.add_sos_eos import add_sos_eos
 from espnet.nets.pytorch_backend.transformer.label_smoothing_loss import (
     LabelSmoothingLoss,  # noqa: H301
 )
-from espnet2.hybrid_asr.cross_entropy import CrossEntropy
 from espnet2.asr.decoder.abs_decoder import AbsDecoder
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
@@ -84,14 +83,15 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 torch.nn.Linear(encoder.output_size(), vocab_size),
                 torch.nn.Linear(encoder.output_size(), vocab_size),
             ])
-        self.cross_entropy = LabelSmoothingLoss(
-            size=vocab_size,
-            padding_idx=ignore_id,
-            smoothing=lsm_weight,
-            normalize_length=length_normalized_loss,
-            criterion=torch.nn.KLDivLoss(reduce=False, reduction="none"),
-            reduce=False,
-        )
+        # self.cross_entropy = LabelSmoothingLoss(
+        #     size=vocab_size,
+        #     padding_idx=ignore_id,
+        #     smoothing=lsm_weight,
+        #     normalize_length=length_normalized_loss,
+        #     criterion=torch.nn.KLDivLoss(reduce=False, reduction="none"),
+        #     reduce=False,
+        # )
+        self.cross_entropy = torch.nn.CrossEntropyLoss(ignore_index=ignore_id, reduce=False, reduction="none")
         self.dropout_rate = 0.0
         # self.decoder = decoder
         # self.rnnt_decoder = rnnt_decoder
@@ -157,7 +157,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
 
         # 1. Encoder
         encoder_out, encoder_out_lens = self.encode(speech_mix, speech_mix_lengths)
-
         # if isinstance(self.ce_lo, torch.nn.ModuleList):
         if isinstance(encoder_out, list):
             if encoder_out[0].shape[1] < phn_ref1.shape[1]:
@@ -170,22 +169,24 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             ys_hats = [
                 self.ce_lo(F.dropout(enc_out, p=self.dropout_rate)) for enc_out in encoder_out
             ]
+            ys_hats_lengths = encoder_out_lens
         else:
             if encoder_out.shape[1] < phn_ref1.shape[1]:
                 phn_ref1 = phn_ref1[:, :encoder_out.shape[1]].contiguous()
                 phn_ref2 = phn_ref2[:, :encoder_out.shape[1]].contiguous()
             elif encoder_out.shape[1] > phn_ref1.shape[1]:
                 encoder_out = encoder_out[:, :phn_ref1.shape[1]].contiguous()
-                
+
             ys_hats = [
                 lo(F.dropout(encoder_out, p=self.dropout_rate)) for lo in self.ce_lo
             ]
+            ys_hats_lengths = [encoder_out_lens, encoder_out_lens]
 
         loss_ce_perm = torch.stack(
             [
                 self._calc_ce_loss(
                     ys_hats[i // self.num_spkrs],
-                    encoder_out_lens[i // self.num_spkrs],
+                    ys_hats_lengths[i // self.num_spkrs],
                     targets[i % self.num_spkrs],
                     targets_lengths[i % self.num_spkrs],
                 )
@@ -308,7 +309,13 @@ class ESPnetHybridASRModel(AbsESPnetModel):
     ):
         # Calc CTC loss
         # assert ys_hat.shape[:2] == ys_pad.shape[:2], f'{ys_hat.shape[:2]} vs. {ys_pad.shape[:2]}'
-        bs, seq_len, _ = ys_hat.shape
+        # bs, seq_len, _ = ys_hat.shape
+        # loss_ce = self.cross_entropy(ys_hat, ys_pad)  # (batch * seq_len)
+        # loss_ce = torch.sum(loss_ce.view(bs, seq_len), dim=1)  # (batch)
+
+        bs, seq_len, o_dim = ys_hat.shape
+        ys_hat = ys_hat.view(-1, o_dim)
+        ys_pad = ys_pad.view(-1)
         loss_ce = self.cross_entropy(ys_hat, ys_pad)  # (batch * seq_len)
         loss_ce = torch.sum(loss_ce.view(bs, seq_len), dim=1)  # (batch)
 
