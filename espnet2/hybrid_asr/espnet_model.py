@@ -34,6 +34,155 @@ else:
     def autocast(enabled=True):
         yield
 
+label_samples=[
+    10888174,
+    4239994,
+    3764906,
+    2832657,
+    2355986,
+    1407264,
+    1465425,
+    1283446,
+    1309389,
+    1198724,
+    1076269,
+    838217,
+    770442,
+    746908,
+    675613,
+    602303,
+    599189,
+    666542,
+    564322,
+    563007,
+    491817,
+    502596,
+    573153,
+    504542,
+    489471,
+    483707,
+    443495,
+    458990,
+    417451,
+    488922,
+    395639,
+    435645,
+    420558,
+    421057,
+    454435,
+    417093,
+    394462,
+    369486,
+    370035,
+    344336,
+    373462,
+    355162,
+    337502,
+    310203,
+    322019,
+    331866,
+    280456,
+    325277,
+    278009,
+    314916,
+    314502,
+    309215,
+    271945,
+    279476,
+    268366,
+    273357,
+    282746,
+    291919,
+    277133,
+    288849,
+    280442,
+    260575,
+    278289,
+    263387,
+    260539,
+    276940,
+    265651,
+    266467,
+    268625,
+    265779,
+    259352,
+    264321,
+    233377,
+    248513,
+    249558,
+    247734,
+    238930,
+    237114,
+    237972,
+    227185,
+    233741,
+    226440,
+    230379,
+    228354,
+    223397,
+    215155,
+    218371,
+    211654,
+    216080,
+    212899,
+    208194,
+    195754,
+    190549,
+    187444,
+    177319,
+    153806,
+    145137,
+    125141,
+    124866,
+    119975,
+    104381,
+    100514,
+    84695,
+    40134,
+    21981,
+    22182,
+    8175,
+    758,
+    69,
+    66,
+    28,
+    4,
+    1,
+    1,
+    1,
+    1,
+] 
+# option 1: just give some specific weights
+# normedWeights = [1 - (x / sum(label_samples)) for x in label_samples]
+# normedWeights[0:3] = [0.05, 0.08, 0.1]
+# print('weights:', normedWeights)
+
+# option 2: (log2(x+100)) ** 2  
+normedWeights = torch.FloatTensor(label_samples)
+normedWeights = torch.log2(normedWeights + 100)
+normedWeights = normedWeights * normedWeights
+normedWeights = 1 / (normedWeights / normedWeights.sum())
+normedWeights = 100 * normedWeights / normedWeights.sum()
+
+print('weights:', normedWeights)
+
+
+def pick_longer_utt(ref1,ref2):
+    """ ref1,ref2: shape of [bs, label_lens]"""
+    longer_ref = []
+    for s1,s2 in zip(ref1,ref2):
+        s1_mask =  (s1 == 0).int() 
+        s2_mask =  (s2 == 0).int()
+        if s1_mask[-30:].sum() > 20:
+            longer_ref.append(s1)
+        elif s2_mask[-30:].sum() > 20:
+            longer_ref.append(s2)
+        else:
+            print("s1 s2 last 30:", s1[-30:], s2[-30:])
+            raise ValueError
+    longer_ref = torch.stack(longer_ref,dim=0) #bs,label_lens
+    assert longer_ref.shape == ref1.shape ==ref2.shape
+    return longer_ref
 
 class ESPnetHybridASRModel(AbsESPnetModel):
     """Hybrid ASR model"""
@@ -91,8 +240,10 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         #     criterion=torch.nn.KLDivLoss(reduce=False, reduction="none"),
         #     reduce=False,
         # )
-        self.cross_entropy = torch.nn.CrossEntropyLoss(ignore_index=ignore_id, reduce=False, reduction="none")
+        self.cross_entropy = torch.nn.CrossEntropyLoss(weight=torch.FloatTensor(normedWeights), ignore_index=ignore_id, reduce=False, reduction="none")
         self.dropout_rate = 0.0
+        self.cut_begin_end = False
+        self.only_longer_ref = False
         # self.decoder = decoder
         # self.rnnt_decoder = rnnt_decoder
         # self.criterion_att = LabelSmoothingLoss(
@@ -145,6 +296,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         )
         batch_size = speech_mix.shape[0]
 
+
         # for data-parallel
         targets = [
             phn_ref1[:, : phn_ref1_lengths.max()],
@@ -155,8 +307,13 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             phn_ref2_lengths,
         ]
 
+        if self.only_longer_ref:
+            longer_phn_ref = pick_longer_utt(phn_ref1,phn_ref2)
+            target = longer_phn_ref
+            targets_lengths =  phn_ref1_lengths
+
         # 1. Encoder
-        encoder_out, encoder_out_lens = self.encode(speech_mix, speech_mix_lengths)
+        encoder_out, encoder_out_lens = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
         # if isinstance(self.ce_lo, torch.nn.ModuleList):
         if isinstance(encoder_out, list):
             if encoder_out[0].shape[1] < phn_ref1.shape[1]:
@@ -166,9 +323,23 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 encoder_out[0] = encoder_out[0][:, :phn_ref1.shape[1]].contiguous()
                 encoder_out[1] = encoder_out[1][:, :phn_ref1.shape[1]].contiguous()
 
+            if self.cut_begin_end:
+                assert encoder_out[0].shape[1]==phn_ref1.shape[1]==phn_ref2.shape[1], (encoder_out[0].shape,phn_ref1.shape,phn_ref2.shapie)
+                cut_begin = int(0.2* phn_ref1_lengths.max())
+                cut_len = int(0.5*phn_ref1_lengths.max())
+                cut_end = int(0.2* phn_ref1_lengths.max()) + cut_len
+                encoder_out=[enc[:,cut_begin:cut_end] for enc in encoder_out]
+                encoder_out_lens= [torch.ones_like(enc) * int(cut_len) for enc in encoder_out_lens]
+                targets = [
+                    phn_ref1[:, cut_begin : cut_end],
+                    phn_ref2[:, cut_begin : cut_end],
+                ]
+                targets_lengths = encoder_out_lens
+
+
             ys_hats = [
                 self.ce_lo(F.dropout(enc_out, p=self.dropout_rate)) for enc_out in encoder_out
-            ]
+            ] # n_spk * (bs, lens, proj)
             ys_hats_lengths = encoder_out_lens
         else:
             if encoder_out.shape[1] < phn_ref1.shape[1]:
@@ -182,6 +353,32 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             ]
             ys_hats_lengths = [encoder_out_lens, encoder_out_lens]
 
+        # print("ys_hats:", ys_hats[0].shape, ys_hats[1][0].max(-1)[1][800:820].data.cpu().numpy())
+
+        if self.only_longer_ref:
+            loss_ce = self._calc_ce_loss(ys_hats[0],ys_hats_lengths[0],targets,targets_lengths)
+            all_ys_hats = ys_hats[0]
+            all_targets = targets
+            assert all_ys_hats.shape == all_targets.shape
+            acc_ce = th_accuracy(
+                all_ys_hats,
+                all_targets,
+                ignore_label=self.ignore_id,
+            )
+            print("ys_hats:", ys_hats[0].shape, ys_hats[0][0].max(-1)[1][800:820])
+            print("targets:", all_targets[0][800:820].data.cpu().numpy())
+            print("predict:", all_ys_hats.max(-1)[1][0][800:820].data.cpu().numpy(), '\n')
+            loss = loss_ce
+
+            stats = dict(
+                loss=loss.detach(),
+                acc=acc_ce,
+            )
+
+            # force_gatherable: to-device and to-tensor if scalar for DataParallel
+            loss, stats, weight = force_gatherable((loss, stats, batch_size), loss.device)
+            return loss, stats, weight
+
         loss_ce_perm = torch.stack(
             [
                 self._calc_ce_loss(
@@ -193,20 +390,23 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 for i in range(self.num_spkrs ** 2)
             ],
             dim=1
-        )
-        loss_ce, min_perm = self.pit.pit_process(loss_ce_perm)
+        ) # (bs, n_spk**2)
+
+        loss_ce, min_perm = self.pit.pit_process(loss_ce_perm) # min_perm: bs*[0, 1] or bs*[1, 0]
 
         all_targets = []
         for i in range(self.num_spkrs):
             for n in range(batch_size):
                 all_targets.append(targets[min_perm[n][i]][n])
-        all_targets = torch.stack(all_targets, dim=0)
+        all_targets = torch.stack(all_targets, dim=0) # (bs*spk, lens)
         all_ys_hats = torch.cat(ys_hats, dim=0)
         acc_ce = th_accuracy(
             all_ys_hats.view(-1, self.vocab_size),
             all_targets,
             ignore_label=self.ignore_id,
         )
+        # print("targets:", all_targets[1][800:820].data.cpu().numpy())
+        # print("predict:", all_ys_hats.max(-1)[1][1][800:820].data.cpu().numpy(), "\n")
 
         loss = loss_ce
 
@@ -214,6 +414,9 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             loss=loss.detach(),
             acc=acc_ce,
         )
+
+        # for name,param in self.ce_lo.named_parameters():
+            # print(name,param)
 
         # force_gatherable: to-device and to-tensor if scalar for DataParallel
         loss, stats, weight = force_gatherable((loss, stats, batch_size), loss.device)

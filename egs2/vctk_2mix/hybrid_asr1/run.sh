@@ -27,5 +27,5 @@ asr_conf=train_asr_mixrnn_1;
     --local_data_opts "--sample_rate ${sample_rate} --min_or_max ${min_or_max}" \
     --asr_config conf/tuning/${asr_conf}.yaml \
     --token_type phn \
-    --lm_train_text "data/${train_set}/vq_spk1 data/${train_set}/vq_spk2" \
+    --lm_train_text "data/${train_set}/vq_spk1 data/${train_set}/vq_spk2 data/${valid_set}/vq_spk1 data/${valid_set}/vq_spk2" \
     "$@"
