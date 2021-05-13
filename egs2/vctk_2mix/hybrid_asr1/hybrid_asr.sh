@@ -837,7 +837,8 @@ if ! "${skip_eval}"; then
         mkdir -p "${asr_exp}"; echo "${run_args} --stage 7 \"\$@\"; exit \$?" > "${asr_exp}/run_enhance.sh"; chmod +x "${asr_exp}/run_enhance.sh"
         _opts=
 
-        for dset in "${valid_set}" ${test_sets}; do
+        # for dset in "${valid_set}" ${test_sets}; do
+        for dset in ${test_sets} ; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/enhanced_${dset}"
             _logdir="${_dir}/logdir"
@@ -860,13 +861,13 @@ if ! "${skip_eval}"; then
             log "Ehancement started... log: '${_logdir}/enh_inference.*.log'"
             # shellcheck disable=SC2086
             ${_cmd} --gpu "${_ngpu}" JOB=1:"${_nj}" "${_logdir}"/enh_inference.JOB.log \
-                ${python} -m espnet2.bin.enh_inference \
+                ${python} -m espnet2.bin.hybrid_separation_inference\
                     --ngpu "${_ngpu}" \
                     --fs "${fs}" \
                     --data_path_and_name_and_type "${_data}/${_scp},speech_mix,${_type}" \
                     --key_file "${_logdir}"/keys.JOB.scp \
-                    --enh_train_config "${asr_exp}"/config.yaml \
-                    --enh_model_file "${asr_exp}"/"${inference_model}" \
+                    --hybrid_train_config "${asr_exp}"/config.yaml \
+                    --hybrid_model_file "${asr_exp}"/"${inference_asr_model}" \
                     --output_dir "${_logdir}"/output.JOB \
                     ${_opts} ${inference_args}
 
@@ -877,6 +878,14 @@ if ! "${skip_eval}"; then
             done
 
             # 3. Concatenates the output files from each jobs
+            for i in $(seq "${_nj}"); do
+                cat "${_logdir}/output.${i}/text0"
+            done | LC_ALL=C sort -k1 > "${_dir}/text_spk1"
+
+            for i in $(seq "${_nj}"); do
+                cat "${_logdir}/output.${i}/text1"
+            done | LC_ALL=C sort -k1 > "${_dir}/text_spk2"
+
             for spk in ${_spk_list} ;
             do
                 for i in $(seq "${_nj}"); do
