@@ -37,6 +37,7 @@ from espnet2.asr.encoder.vgg_rnn_encoder import VGGRNNEncoder
 from espnet2.asr.encoder.wav2vec2_encoder import FairSeqWav2Vec2Encoder
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
 from espnet2.asr.frontend.default import DefaultFrontend
+from espnet2.asr.frontend.melgan import MelGANDiscriminator
 from espnet2.asr.frontend.windowing import SlidingWindow
 from espnet2.asr.preencoder.abs_preencoder import AbsPreEncoder
 from espnet2.asr.preencoder.sinc import LightweightSincConvs
@@ -62,7 +63,11 @@ from espnet2.utils.types import str_or_none
 
 frontend_choices = ClassChoices(
     name="frontend",
-    classes=dict(default=DefaultFrontend, sliding_window=SlidingWindow),
+    classes=dict(
+        default=DefaultFrontend,
+        sliding_window=SlidingWindow,
+        melgan=MelGANDiscriminator,
+    ),
     type_check=AbsFrontend,
     default="default",
 )
