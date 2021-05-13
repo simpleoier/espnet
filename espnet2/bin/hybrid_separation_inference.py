@@ -23,6 +23,7 @@ import yaml
 from espnet.utils.cli_utils import get_commandline_args
 from espnet2.fileio.datadir_writer import DatadirWriter
 from espnet2.fileio.sound_scp import SoundScpWriter
+from espnet2.hybrid_asr.loss_weights import idx_to_vq
 # from espnet2.tasks.enh import
 from espnet2.tasks.hybrid_asr import ASRTask 
 from espnet2.torch_utils.device_funcs import to_device
@@ -37,8 +38,10 @@ from espnet2.utils.types import str_or_none
 
 EPS = torch.finfo(torch.get_default_dtype()).eps
 
-def vq_decode(utt_id, vq_seq, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/"):
+def vq_decode(utt_id, idx_seq, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/"):
     """Run decoding process."""
+    vq_seq = torch.LongTensor([idx_to_vq[idx] for idx in idx_seq]).to(idx_seq.device)
+    assert vq_seq.shape == idx_seq.shape
     checkpoint=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/checkpoint-5000000steps.pkl"
     config=default=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/config.yml" 
     verbose=1
