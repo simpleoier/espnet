@@ -13,9 +13,10 @@ train_set="tr_${min_or_max}_${sample_rate}"
 valid_set="cv_${min_or_max}_${sample_rate}"
 test_sets="tt_${min_or_max}_${sample_rate} "
 
-stage=10; stop_stage=13
-#asr_conf=train_asr_rnn_1;
-asr_conf=train_asr_mixrnn_2;
+stage=9; stop_stage=13
+
+opts=${opts:-}" --expdir exp_melganfrontend" 
+asr_conf=train_asr_melganfrontend_mixrnn_2 
 
 ./hybrid_asr.sh \
     --stage ${stage} --stop_stage ${stop_stage} \
@@ -28,4 +29,4 @@ asr_conf=train_asr_mixrnn_2;
     --asr_config conf/tuning/${asr_conf}.yaml \
     --token_type phn \
     --lm_train_text "data/${train_set}/vq_spk1 data/${train_set}/vq_spk2 data/${valid_set}/vq_spk1 data/${valid_set}/vq_spk2" \
-    "$@"
+    ${opts} "$@"

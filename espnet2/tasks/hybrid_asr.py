@@ -314,7 +314,7 @@ class ASRTask(AbsTask):
             retval = ("speech_mix", "phn_ref1", "phn_ref2")
         else:
             # Recognition mode
-            retval = ("speech",)
+            retval = ("speech_mix",)
         return retval
 
     @classmethod
