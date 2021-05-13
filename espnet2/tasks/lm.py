@@ -98,7 +98,7 @@ class LMTask(AbsTask):
             "--token_type",
             type=str,
             default="bpe",
-            choices=["bpe", "char", "word"],
+            choices=["bpe", "char", "word", "phn"],
             help="",
         )
         group.add_argument(
