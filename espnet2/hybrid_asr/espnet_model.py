@@ -42,19 +42,23 @@ else:
         yield
 
 
-def pick_longer_utt(ref1,ref2):
-    """ ref1,ref2: shape of [bs, label_lens]"""
+def pick_longer_utt(ref1,ref2,lenghts1,lenghts2):
+    """ ref1,ref2: shape of [bs, label_lens]
+        len1,len2: shape of [bs]
+    """
     longer_ref = []
-    for s1,s2 in zip(ref1,ref2):
-        s1_mask =  (s1 == 0).int() 
-        s2_mask =  (s2 == 0).int()
-        if s1_mask[-30:].sum() > 20:
+    for s1,s2,l1,l2 in zip(ref1,ref2,lenghts1,lenghts2):
+        assert l1==l2, (s1.shape, s2.shape, l1,l2)
+        s1_nopad = s1[:l1]
+        s2_nopad = s2[:l2]
+        s1_mask =  (s1_nopad != 0).int() 
+        s2_mask =  (s2_nopad != 0).int()
+        if s1_mask[-50:].sum() > s2_mask[-50:].sum():
             longer_ref.append(s1)
-        elif s2_mask[-30:].sum() > 20:
-            longer_ref.append(s2)
+            # print("[s1] s2 last 30:", s1_nopad[-30:], s2_nopad[-30:])
         else:
-            print("s1 s2 last 30:", s1[-30:], s2[-30:])
-            raise ValueError
+            longer_ref.append(s2)
+            # print("s1 [s2] last 30:", s1_nopad[-30:], s2_nopad[-30:])
     longer_ref = torch.stack(longer_ref,dim=0) #bs,label_lens
     assert longer_ref.shape == ref1.shape ==ref2.shape
     return longer_ref
@@ -82,6 +86,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         sym_blank: str = "<blank>",
         num_spkrs: int = 2,
         chunk_size: int = -1,
+        only_longer_ref: bool = False,
     ):
         assert check_argument_types()
         assert rnnt_decoder is None, "Not implemented"
@@ -117,7 +122,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         )
         self.dropout_rate = 0.0
         self.cut_begin_end = False
-        self.only_longer_ref = False
+        self.only_longer_ref = only_longer_ref
 
         if report_cer or report_wer:
             self.error_calculator = ErrorCalculator(
@@ -200,9 +205,9 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         ]
 
         if self.only_longer_ref:
-            longer_phn_ref = pick_longer_utt(phn_ref1,phn_ref2)
-            target = longer_phn_ref
-            targets_lengths =  phn_ref1_lengths
+            longer_phn_ref = pick_longer_utt(phn_ref1,phn_ref2,phn_ref1_lengths,phn_ref2_lengths)
+            longer_target = longer_phn_ref
+            longer_target_lengths =  phn_ref1_lengths
 
         # 1. Encoder
         encoder_out, encoder_out_lens = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
@@ -215,18 +220,20 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             phn_ref2_lengths,
         )
         targets = [phn_ref1, phn_ref2]
+
         if self.only_longer_ref:
-            loss_ce = self._calc_ce_loss(ys_hats[0],ys_hats_lengths[0],targets,targets_lengths)
+            print("hats(0),target:",ys_hats[0].shape,longer_target.shape)
+            loss_ce = self._calc_ce_loss(ys_hats[0],ys_hats_lengths[0],longer_target,longer_target_lengths).mean()
             all_ys_hats = ys_hats[0]
-            all_targets = targets
-            assert all_ys_hats.shape == all_targets.shape
+            all_targets = longer_target
+            assert all_ys_hats.shape[:2] == all_targets.shape, (all_ys_hats.shape, all_targets.shape)
             acc_ce = th_accuracy(
-                all_ys_hats,
+                all_ys_hats.view(-1, self.vocab_size),
                 all_targets,
                 ignore_label=self.ignore_id,
             )
             print("ys_hats:", ys_hats[0].shape, ys_hats[0][0].max(-1)[1][800:820])
-            print("targets:", all_targets[0][800:820].data.cpu().numpy())
+            print("longer_targets:", all_targets[0][800:820].data.cpu().numpy())
             print("predict:", all_ys_hats.max(-1)[1][0][800:820].data.cpu().numpy(), '\n')
             loss = loss_ce
 
@@ -234,6 +241,11 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 loss=loss.detach(),
                 acc=acc_ce,
             )
+            pad_pred = all_ys_hats.view(
+                all_targets.size(0), all_targets.size(1), all_ys_hats.size(-1)
+            ).argmax(2)
+            acc_unit = (pad_pred == all_targets)
+            print("acc_unit", acc_unit.shape, acc_unit.sum(1)/acc_unit.size(1))
 
             # force_gatherable: to-device and to-tensor if scalar for DataParallel
             loss, stats, weight = force_gatherable((loss, stats, batch_size), loss.device)
