@@ -1,11 +1,17 @@
 from contextlib import contextmanager
 from distutils.version import LooseVersion
+import logging
+import os
+import time
 from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
 from typing import Union
+import yaml
 
+import parallel_wavegan.models
+import soundfile as sf
 import torch
 import torch.nn.functional as F
 from typeguard import check_argument_types
@@ -22,7 +28,7 @@ from espnet2.asr.encoder.abs_encoder import AbsEncoder
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
 from espnet2.asr.preencoder.abs_preencoder import AbsPreEncoder
 from espnet2.asr.specaug.abs_specaug import AbsSpecAug
-from espnet2.hybrid_asr.loss_weights import normedWeights
+from espnet2.hybrid_asr.loss_weights import normedWeights, idx_to_vq
 from espnet2.layers.abs_normalize import AbsNormalize
 from espnet2.torch_utils.device_funcs import force_gatherable
 from espnet2.train.abs_espnet_model import AbsESPnetModel
@@ -171,7 +177,10 @@ class ESPnetHybridASRModel(AbsESPnetModel):
 
         # 1. Encoder
         encoder_out, encoder_out_lens = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
-        ys_hats, ys_hats_lengths = self._compute_output_layer(encoder_out, encoder_out_lens, phn_ref1, phn_ref2)
+        ys_hats, ys_hats_lengths, phn_ref1, phn_ref2 = self._compute_output_layer(encoder_out, encoder_out_lens, \
+                phn_ref1, phn_ref2, phn_ref1_lengths, phn_ref2_lengths)
+        targets = [phn_ref1, phn_ref2]
+
         if self.only_longer_ref:
             loss_ce = self._calc_ce_loss(ys_hats[0],ys_hats_lengths[0],targets,targets_lengths)
             all_ys_hats = ys_hats[0]
@@ -217,11 +226,32 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 all_targets.append(targets[min_perm[n][i]][n])
         all_targets = torch.stack(all_targets, dim=0) # (bs*spk, lens)
         all_ys_hats = torch.cat(ys_hats, dim=0)
+        # print("ys_hats:", ys_hats[0].shape, ys_hats[0][0].max(-1)[1][800:820])
+        # print("targets:", all_targets[0][800:820].data.cpu().numpy())
+        # print("predict:", all_ys_hats.max(-1)[1][0][800:820].data.cpu().numpy(), '\n')
         acc_ce = th_accuracy(
             all_ys_hats.view(-1, self.vocab_size),
             all_targets,
             ignore_label=self.ignore_id,
         )
+        '''
+        # More detailed acc info:
+        pad_pred = all_ys_hats.view(
+            all_targets.size(0), all_targets.size(1), all_ys_hats.size(-1)
+        ).argmax(2)
+        acc_unit = (pad_pred == all_targets)
+        print("acc_unit", acc_unit.shape, acc_unit.sum(1)/acc_unit.size(1))
+        if acc_unit.sum(1)[0]/acc_unit.size(1)>0.7:
+            vq_decode('{}_0'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_ys_hats[0].max(-1)[1])
+            vq_decode('{}_1'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_ys_hats[1].max(-1)[1])
+            vq_decode('{}_0_ref'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_targets[0])
+            vq_decode('{}_1_ref'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_targets[1])
+        elif acc_unit.sum(1)[0]/acc_unit.size(1)>0.7:
+            vq_decode('{}_0'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_ys_hats[0].max(-1)[1])
+            vq_decode('{}_1'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_ys_hats[1].max(-1)[1])
+            vq_decode('{}_0_ref'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_targets[0])
+            vq_decode('{}_1_ref'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_targets[1])
+        '''
 
         loss = loss_ce
 
@@ -361,7 +391,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 lo(F.dropout(encoder_out, p=self.dropout_rate)) for lo in self.ce_lo
             ]
             ys_hats_lengths = [encoder_out_lens, encoder_out_lens]
-        return ys_hats, ys_hats_lengths
+        return ys_hats, ys_hats_lengths, phn_ref1, phn_ref2 #, phn_ref1_lengths, phn_ref2_lengths
 
 
     def _calc_ce_loss(
@@ -378,3 +408,80 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         loss_ce = torch.sum(loss_ce.view(bs, seq_len), dim=1)  # (batch)
 
         return loss_ce
+
+def vq_decode(utt_id, idx_seq, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/"):
+    """Run decoding process."""
+    vq_seq = torch.LongTensor([idx_to_vq[idx] for idx in idx_seq]).to(idx_seq.device)
+    assert vq_seq.shape == idx_seq.shape
+    print('vq_seq:',vq_seq.shape,vq_seq)
+    checkpoint=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/checkpoint-5000000steps.pkl"
+    config=default=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/config.yml" 
+    verbose=1
+
+    # set logger
+    if verbose > 1:
+        logging.basicConfig(
+            level=logging.DEBUG, format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s")
+    elif verbose > 0:
+        logging.basicConfig(
+            level=logging.INFO, format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s")
+    else:
+        logging.basicConfig(
+            level=logging.WARN, format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s")
+        logging.warning("Skip DEBUG/INFO messages")
+
+    # load config
+    if config is None:
+        dirname = os.path.dirname(checkpoint)
+        config = os.path.join(dirname, "config.yml")
+    with open(config) as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+    # config.update(vars(vq_args))
+
+    # setup model
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    device = vq_seq.device
+    model_class = getattr(
+        parallel_wavegan.models,
+        config.get("generator_type", "ParallelWaveGANGenerator"))
+    model = model_class(**config["generator_params"])
+    model.load_state_dict(
+        torch.load(checkpoint, map_location="cpu")["model"]["generator"])
+    logging.info(f"Loaded model parameters from {checkpoint}.")
+    model.remove_weight_norm()
+    model = model.eval().to(device)
+
+    utt2spk = None
+    if utt2spk is not None:
+        assert spk2idx is not None
+        with open(utt2spk) as f:
+            lines = [l.replace("\n", "") for l in f.readlines()]
+        utt2spk = {l.split()[0]: str(l.split()[1]) for l in lines}
+        with open(spk2idx) as f:
+            lines = [l.replace("\n", "") for l in f.readlines()]
+        spk2idx = {l.split()[0]: int(l.split()[1]) for l in lines}
+
+    # start generation
+    with torch.no_grad():
+        #  torch.LongTensor(vq_seq).view(1, -1).to(device)
+        z = vq_seq.long().view(1,-1)
+        logging.info(f"Z.shape:", z.shape)
+        g = None
+        if utt2spk is not None:
+            spk_idx = spk2idx[utt2spk[utt_id]]
+            g = torch.tensor(spk_idx).long().view(1).to(device)
+        g = torch.tensor(3).long().view(1).to(device)
+        start = time.time()
+        y = model.decode(z, None, g).view(-1).cpu().numpy()
+        rtf = (time.time() - start) / (len(y) / config["sampling_rate"])
+
+        # save as PCM 16 bit wav file
+        sf.write(os.path.join("tmp_gen/", f"{utt_id}_gen.wav"),
+                    y, config["sampling_rate"], "PCM_16")
+                    
+
+        # report average RTF
+        logging.info(f"Finished generation of utterances {utt_id} (RTF = {rtf:.03f}).")
