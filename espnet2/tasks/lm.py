@@ -113,6 +113,11 @@ class LMTask(AbsTask):
             help="non_linguistic_symbols file path",
         )
         parser.add_argument(
+            "--unk_symbol",
+            type=str_or_none,
+            help="unknown symbol",
+        )
+        parser.add_argument(
             "--cleaner",
             type=str_or_none,
             choices=[None, "tacotron", "jaconv", "vietnamese"],
@@ -159,6 +164,7 @@ class LMTask(AbsTask):
                 text_cleaner=args.cleaner,
                 g2p_type=args.g2p,
                 non_linguistic_symbols=args.non_linguistic_symbols,
+                unk_symbol=args.unk_symbol,
             )
         else:
             retval = None
