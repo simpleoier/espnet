@@ -1,5 +1,5 @@
 batch_type: folded
-batch_size: 24 # for 4 GPU
+batch_size: 12 # for 4 GPU
 init: xavier_uniform
 log_interval: 2
 accum_grad: 10
@@ -12,13 +12,19 @@ best_model_criterion:
 -   - valid
     - acc
     - max
+-   - valid
+    - loss
+    - min
 keep_nbest_models: 1
 
-frontend: melgan
+frontend: default
 frontend_conf:
-    out_channels: 256
+    fs: 24000
+    n_fft: 512
+    win_length: 512
+    hop_length: 64
 
-encoder: rnn_mix
+encoder: rnn_mix_spk
 encoder_conf:
     rnn_type: lstm
     bidirectional: true
@@ -38,6 +44,7 @@ encoder_conf:
 model_conf:
     lsm_weight: 0.0
     num_spkrs: 2
+    predict_spk: true
 
 # optim: adadelta
 optim: adam

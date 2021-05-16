@@ -1,5 +1,5 @@
 batch_type: folded
-batch_size: 12 # for 4 GPU
+batch_size: 24 # for 4 GPU
 init: xavier_uniform
 log_interval: 100
 accum_grad: 10
