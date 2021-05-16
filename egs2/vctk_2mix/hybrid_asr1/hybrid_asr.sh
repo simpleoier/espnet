@@ -880,6 +880,8 @@ if ! "${skip_train}"; then
         # prepare train and valid data parameters
         _train_data_param="--train_data_path_and_name_and_type ${_asr_train_dir}/wav.scp,speech_mix,sound "
         _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/wav.scp,speech_mix,sound "
+        _train_data_param="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
+        _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
         for spk in $(seq "${spk_num}"); do
             _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/vq_spk${spk},phn_ref${spk},text "
             _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/vq_spk${spk},phn_ref${spk},text "
@@ -949,7 +951,9 @@ if ! "${skip_train}"; then
         # prepare train and valid data parameters
         _train_data_param="--train_data_path_and_name_and_type ${_asr_train_dir}/wav.scp,speech_mix,sound "
         _train_shape_param="--train_shape_file ${asr_stats_dir}/train/speech_mix_shape "
+        _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
         _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/wav.scp,speech_mix,sound "
+        _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
         _valid_shape_param="--valid_shape_file ${asr_stats_dir}/valid/speech_mix_shape "
         _fold_length_param="--fold_length ${_fold_length} "
         for spk in $(seq "${spk_num}"); do
