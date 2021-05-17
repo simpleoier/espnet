@@ -40,6 +40,7 @@ class RNNEncoderMix_spk(AbsEncoder):
         hidden_size: int = 320,
         output_size: int = 320,
         dropout: float = 0.0,
+        pooling: str = "mean",
         subsample: Optional[Sequence[int]] = (2, 2, 1, 1),
     ):
         assert check_argument_types()
@@ -49,6 +50,7 @@ class RNNEncoderMix_spk(AbsEncoder):
         self.bidirectional = bidirectional
         self.use_projection = use_projection
         self.num_spkrs = num_spkrs
+        self.pooling = pooling
 
         if rnn_type not in {"lstm", "gru"}:
             raise ValueError(f"Not supported rnn_type={rnn_type}")
@@ -159,7 +161,10 @@ class RNNEncoderMix_spk(AbsEncoder):
             for module in self.enc_sd[ns]:
                 xs_pad_sd[ns], ilens_sd[ns], _ = module(xs_pad_sd[ns], ilens_sd[ns])
 
-            xs_pad_sd_spks[ns] = xs_pad_sd[ns].mean(1) # bs,T,D --> bs,D
+            if self.pooling == "mean":
+                xs_pad_sd_spks[ns] = xs_pad_sd[ns].mean(1) # bs,T,D --> bs,D
+            elif self.pooling == "max":
+                xs_pad_sd_spks[ns] = xs_pad_sd[ns].max(1)[0] # bs,T,D --> bs,D
             ilens_sd_spks[ns] = ilens_sd[ns] # bs, 
             # print('xs_pad_spks:', xs_pad_sd_spks[ns][0,100:110])
 
