@@ -16,6 +16,7 @@ from espnet2.enh.espnet_model import ESPnetEnhancementModel
 from espnet2.fileio.datadir_writer import DatadirWriter
 from espnet2.fileio.sound_scp import SoundScpReader
 from espnet2.utils import config_argparse
+from espnet2.utils.types import str2bool
 
 
 def scoring(
@@ -26,6 +27,7 @@ def scoring(
     ref_scp: List[str],
     inf_scp: List[str],
     ref_channel: int,
+    allow_lengths_mismatch: bool = False, 
 ):
     assert check_argument_types()
 
@@ -71,6 +73,15 @@ def scoring(
                 # multi-channel reference and output
                 ref = ref[..., ref_channel]
                 inf = inf[..., ref_channel]
+
+            if allow_lengths_mismatch>0:
+                if ref.shape[1] != inf.shape[1]:
+                    logging.warning("Reference ({}) dismatch with Estimation ({}), diff:{}.".format(ref.shape, inf.shape, ref.shape[1]-inf.shape[1]))
+                    if ref.shape[1] > inf.shape[1]:
+                        ref = ref[:, :inf.shape[1]]
+                    else:
+                        inf = inf[:, :ref.shape[1]]
+                    assert ref.shape == inf.shape, (ref.shape, inf.shape)
 
             sdr, sir, sar, perm = bss_eval_sources(ref, inf, compute_permutation=True)
 
@@ -132,6 +143,7 @@ def get_parser():
     )
     group.add_argument("--key_file", type=str)
     group.add_argument("--ref_channel", type=int, default=0)
+    group.add_argument("--allow_lengths_mismatch", type=str2bool, default=False)
 
     return parser
 

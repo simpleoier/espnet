@@ -97,6 +97,10 @@ use_signal_ref=false
 use_dereverb_ref=false
 use_noise_ref=false
 
+# Pretrained model related
+# The number of --init_param must be same.
+init_param=
+
 # Decoding related
 inference_tag=    # Suffix to the result dir for decoding.
 inference_config= # Config for decoding.
@@ -1117,14 +1121,19 @@ if ! "${skip_eval}"; then
             # 2. Submit scoring jobs
             log "Scoring started... log: '${_logdir}/enh_scoring.*.log'"
             # shellcheck disable=SC2086
+            ref_channel=1
+
             ${_cmd} JOB=1:"${_nj}" "${_logdir}"/enh_scoring.JOB.log \
                 ${python} -m espnet2.bin.enh_scoring \
                     --key_file "${_logdir}"/keys.JOB.scp \
                     --output_dir "${_logdir}"/output.JOB \
                     ${_ref_scp} \
                     ${_inf_scp} \
-                    --ref_channel ${ref_channel}
+                    --ref_channel ${ref_channel} \
+                    --allow_lengths_mismatch true
+            }
 
+            scoring_protocol="STOI SDR SAR SIR"
             for spk in $(seq "${spk_num}"); do
                 for protocol in ${scoring_protocol} wav; do
                     for i in $(seq "${_nj}"); do
