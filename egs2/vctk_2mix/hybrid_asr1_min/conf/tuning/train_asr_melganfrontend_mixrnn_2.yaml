@@ -23,31 +23,33 @@ encoder_conf:
     rnn_type: lstm
     bidirectional: true
     use_projection: true
-    num_layers_sd: 4
-    num_layers_rec: 2
+    num_layers_sd: 6
+    num_layers_rec: 3
     num_spkrs: 2
     hidden_size: 512
     output_size: 512
-    dropout: 0.1
+    dropout: 0.5
     subsample:
         - 1
         - 1
         - 1
         - 1
 
+normalize: none
+
 model_conf:
     lsm_weight: 0.0
     num_spkrs: 2
 
-# optim: adadelta
+#optim: adadelta
 optim: adam
 optim_conf:
     lr: 0.001
     eps: 1.0e-08
-    weight_decay: 0
+    weight_decay: 0.99
 scheduler: reducelronplateau
 scheduler_conf:
     mode: min
     factor: 0.5
-    patience: 1
+    patience: 2
 

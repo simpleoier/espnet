@@ -29,6 +29,7 @@ from espnet2.asr.encoder.abs_encoder import AbsEncoder
 from espnet2.asr.encoder.conformer_encoder import ConformerEncoder
 from espnet2.asr.encoder.rnn_encoder import RNNEncoder
 from espnet2.asr.encoder.rnn_encoder_mix import RNNEncoderMix
+from espnet2.asr.encoder.rnn_encoder_mix_withSpk import RNNEncoderMix_spk
 from espnet2.asr.encoder.transformer_encoder import TransformerEncoder
 from espnet2.asr.encoder.contextual_block_transformer_encoder import (
     ContextualBlockTransformerEncoder,  # noqa: H301
@@ -107,6 +108,7 @@ encoder_choices = ClassChoices(
         rnn=RNNEncoder,
         wav2vec2=FairSeqWav2Vec2Encoder,
         rnn_mix=RNNEncoderMix,
+        rnn_mix_spk=RNNEncoderMix_spk,
     ),
     type_check=AbsEncoder,
     default="rnn",
@@ -322,6 +324,11 @@ class ASRTask(AbsTask):
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
         retval = ()
+        if not inference:
+            retval = ("speakers_str",)
+        else:
+            retval = ()
+
         assert check_return_type(retval)
         return retval
 

@@ -14,9 +14,12 @@ best_model_criterion:
     - max
 keep_nbest_models: 1
 
-frontend: melgan
+frontend: default
 frontend_conf:
-    out_channels: 256
+    fs: 24000
+    n_fft: 512
+    win_length: 512
+    hop_length: 64
 
 encoder: rnn_mix
 encoder_conf:
@@ -38,6 +41,7 @@ encoder_conf:
 model_conf:
     lsm_weight: 0.0
     num_spkrs: 2
+    use_label_weights: false
 
 # optim: adadelta
 optim: adam

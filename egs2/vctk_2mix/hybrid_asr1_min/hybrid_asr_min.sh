@@ -425,7 +425,7 @@ if ! "${skip_data_prep}"; then
             fi
             utils/copy_data_dir.sh data/"${dset}" "${data_feats}${_suf}/${dset}"
             if [ -f data/${dset}/vq_spk1 ]; then
-                cp data/"${dset}"/text* "${data_feats}${_suf}/${dset}"
+                # cp data/"${dset}"/text* "${data_feats}${_suf}/${dset}"
                 cp data/"${dset}"/vq_* "${data_feats}${_suf}/${dset}"
             fi
             rm -f ${data_feats}${_suf}/${dset}/{segments,wav.scp,reco2file_and_channel}
@@ -693,7 +693,6 @@ if ! "${skip_train}"; then
                     --token_type "${lm_token_type}"\
                     --token_list "${lm_token_list}" \
                     --non_linguistic_symbols "${nlsyms_txt}" \
-                    --unk_symbol "none" \
                     --cleaner "${cleaner}" \
                     --g2p "${g2p}" \
                     --train_data_path_and_name_and_type "${data_feats}/lm_train.txt,text,text" \
@@ -786,7 +785,6 @@ if ! "${skip_train}"; then
                     --token_type "${lm_token_type}"\
                     --token_list "${lm_token_list}" \
                     --non_linguistic_symbols "${nlsyms_txt}" \
-                    --unk_symbol "none" \
                     --cleaner "${cleaner}" \
                     --g2p "${g2p}" \
                     --valid_data_path_and_name_and_type "${data_feats}/lm_dev.txt,text,text" \
@@ -1123,19 +1121,14 @@ if ! "${skip_eval}"; then
             # 2. Submit scoring jobs
             log "Scoring started... log: '${_logdir}/enh_scoring.*.log'"
             # shellcheck disable=SC2086
-            ref_channel=1
-
             ${_cmd} JOB=1:"${_nj}" "${_logdir}"/enh_scoring.JOB.log \
                 ${python} -m espnet2.bin.enh_scoring \
                     --key_file "${_logdir}"/keys.JOB.scp \
                     --output_dir "${_logdir}"/output.JOB \
                     ${_ref_scp} \
                     ${_inf_scp} \
-                    --ref_channel ${ref_channel} \
-                    --allow_lengths_mismatch true
-            }
+                    --ref_channel ${ref_channel}
 
-            scoring_protocol="STOI SDR SAR SIR"
             for spk in $(seq "${spk_num}"); do
                 for protocol in ${scoring_protocol} wav; do
                     for i in $(seq "${_nj}"); do
