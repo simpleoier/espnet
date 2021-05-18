@@ -18,7 +18,7 @@ stage=9; stop_stage=13
 opts=${opts:-}" --expdir exp_melganfrontend" 
 asr_conf=train_asr_melganfrontend_mixrnn_2 
 
-./hybrid_asr.sh \
+./hybrid_asr_min.sh \
     --stage ${stage} --stop_stage ${stop_stage} \
     --train_set "${train_set}" \
     --valid_set "${valid_set}" \

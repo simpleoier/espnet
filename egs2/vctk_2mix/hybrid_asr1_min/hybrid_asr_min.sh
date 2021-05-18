@@ -884,8 +884,8 @@ if ! "${skip_train}"; then
         # prepare train and valid data parameters
         _train_data_param="--train_data_path_and_name_and_type ${_asr_train_dir}/wav.scp,speech_mix,sound "
         _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/wav.scp,speech_mix,sound "
-        _train_data_param="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
-        _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
+        _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
+        _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
         for spk in $(seq "${spk_num}"); do
             _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/vq_spk${spk},phn_ref${spk},text "
             _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/vq_spk${spk},phn_ref${spk},text "

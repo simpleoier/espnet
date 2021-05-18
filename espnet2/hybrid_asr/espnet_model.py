@@ -315,6 +315,9 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             all_targets,
             ignore_label=self.ignore_id,
         )
+        print("ys_hats:", ys_hats[0].shape, ys_hats[0][0].max(-1)[1][800:820])
+        print("targets:", all_targets[0][800:820].data.cpu().numpy())
+        print("predict:", all_ys_hats.max(-1)[1][0][800:820].data.cpu().numpy())
         # More detailed acc info:
         pad_pred = all_ys_hats.view(
             all_targets.size(0), all_targets.size(1), all_ys_hats.size(-1)
@@ -371,7 +374,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         if self.predict_spk:
             stats.update(dict(acc_spk=acc_ce_spk))
             stats.update(dict(loss_ce_spk=loss_ce_spk.detach()))
-        # print('\n\n')
+        print('\n\n')
 
         # force_gatherable: to-device and to-tensor if scalar for DataParallel
         loss, stats, weight = force_gatherable((loss, stats, batch_size), loss.device)
@@ -498,7 +501,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             )
 
             loss.append(loss_ce)
-            corr.append(acc_ce * torch.sum(phn_ref1_lengths) * 2)
+            corr.append(acc_ce * torch.sum(input_phn_ref1_lengths) * 2)
             all_ys_hats_record.append(all_ys_hats)
 
             if end_flag:
@@ -529,6 +532,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         phn_ref1_lengths: torch.Tensor,
         phn_ref2: torch.Tensor,
         phn_ref2_lengths: torch.Tensor,
+        **kwargs,
     ) -> Dict[str, torch.Tensor]:
         feats, feats_lengths = self._extract_feats(speech_mix, speech_mix_lengths)
         return {"feats": feats, "feats_lengths": feats_lengths}
@@ -638,6 +642,8 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 ]
                 targets_lengths = encoder_out_lens
 
+            print('encoder_output:',type(encoder_out))
+            print('encoder_output:',encoder_out[0].shape)
             ys_hats = [
                 self.ce_lo(F.dropout(enc_out, p=self.dropout_rate)) for enc_out in encoder_out
             ] # n_spk * (bs, lens, proj)
