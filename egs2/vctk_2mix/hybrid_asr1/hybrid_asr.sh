@@ -693,6 +693,7 @@ if ! "${skip_train}"; then
                     --token_type "${lm_token_type}"\
                     --token_list "${lm_token_list}" \
                     --non_linguistic_symbols "${nlsyms_txt}" \
+                    --unk_symbol "none" \
                     --cleaner "${cleaner}" \
                     --g2p "${g2p}" \
                     --train_data_path_and_name_and_type "${data_feats}/lm_train.txt,text,text" \
@@ -785,6 +786,7 @@ if ! "${skip_train}"; then
                     --token_type "${lm_token_type}"\
                     --token_list "${lm_token_list}" \
                     --non_linguistic_symbols "${nlsyms_txt}" \
+                    --unk_symbol "none" \
                     --cleaner "${cleaner}" \
                     --g2p "${g2p}" \
                     --valid_data_path_and_name_and_type "${data_feats}/lm_dev.txt,text,text" \
