@@ -98,7 +98,6 @@ class TCNSeparator(AbsEncoder):
 
         # masked = [input * m for m in masks]
         masked = [m for m in masks]
-        print("masks:", type(masks), masks[0].shape)
 
         others = OrderedDict(
             zip(["mask_spk{}".format(i + 1) for i in range(len(masks))], masks)
