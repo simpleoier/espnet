@@ -315,9 +315,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             all_targets,
             ignore_label=self.ignore_id,
         )
-        print("ys_hats:", ys_hats[0].shape, ys_hats[0][0].max(-1)[1][800:820])
-        print("targets:", all_targets[0][800:820].data.cpu().numpy())
-        print("predict:", all_ys_hats.max(-1)[1][0][800:820].data.cpu().numpy())
         # More detailed acc info:
         pad_pred = all_ys_hats.view(
             all_targets.size(0), all_targets.size(1), all_ys_hats.size(-1)
@@ -344,7 +341,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 for n in range(batch_size):
                     all_targets_spk.append(targets_spk[min_perm[n][i]][n])
             all_targets_spk = torch.stack(all_targets_spk, dim=0) # (bs*spk, )
-            print('encoder_out_spk:', encoder_out_spk[0].shape)
             ys_hats_spk = [
                 self.ce_spk(F.dropout(enc_out, p=self.dropout_rate)) for enc_out in encoder_out_spk
             ] # n_spk * (bs, proj)
@@ -642,8 +638,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 ]
                 targets_lengths = encoder_out_lens
 
-            print('encoder_output:',type(encoder_out))
-            print('encoder_output:',encoder_out[0].shape)
             ys_hats = [
                 self.ce_lo(F.dropout(enc_out, p=self.dropout_rate)) for enc_out in encoder_out
             ] # n_spk * (bs, lens, proj)
