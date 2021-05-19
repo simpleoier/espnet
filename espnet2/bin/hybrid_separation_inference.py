@@ -38,7 +38,7 @@ from espnet2.utils.types import str_or_none
 
 EPS = torch.finfo(torch.get_default_dtype()).eps
 
-def vq_decode(utt_id, idx_seq, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/"):
+def vq_decode(utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/"):
     """Run decoding process."""
     vq_seq = torch.LongTensor([idx_to_vq[idx] for idx in idx_seq]).to(idx_seq.device)
     assert vq_seq.shape == idx_seq.shape
@@ -95,19 +95,18 @@ def vq_decode(utt_id, idx_seq, pre_trained_model_root="/data3/VQ_GAN_codebase/eg
     # start generation
     with torch.no_grad():
         z = torch.LongTensor(vq_seq).view(1, -1).to(device)
-        logging.info(f"Z.shape:", z.shape)
         g = None
         if utt2spk is not None:
             spk_idx = spk2idx[utt2spk[utt_id]]
             g = torch.tensor(spk_idx).long().view(1).to(device)
-        g = torch.tensor(3).long().view(1).to(device)
+        g = torch.tensor(spk_idx).long().view(1).to(device)
         start = time.time()
         y = model.decode(z, None, g).view(-1).cpu().numpy()
         rtf = (time.time() - start) / (len(y) / config["sampling_rate"])
 
         # save as PCM 16 bit wav file
-        sf.write(os.path.join("/data3/Espnet_xuankai/espnet/egs2/vctk_2mix/hybrid_asr1/tmp_gen/", f"{utt_id}_gen.wav"),
-                    y, config["sampling_rate"], "PCM_16")
+        # sf.write(os.path.join("/data3/Espnet_xuankai/espnet/egs2/vctk_2mix/hybrid_asr1/tmp_gen/", f"{utt_id}_gen.wav"),
+                    # y, config["sampling_rate"], "PCM_16")
                     
 
         # report average RTF
@@ -285,13 +284,25 @@ class SeparateSpeech:
             waves = torch.unbind(waves, dim=0)
         else:
             # b. Enhancement/Separation Forward207G
-            encoder_out, encoder_out_lens = self.hybrid_model.encode(speech_mix, lengths) # n_spk * (bs, lens, enc_dim)
-            ys_hats = [
-                self.hybrid_model.ce_lo(enc_out) for enc_out in encoder_out
-            ] # n_spk * (bs, lens, proj)
-            vq_seqs = [ys.max(-1)[1] for ys in ys_hats] # n_spk * (bs,lens)
-            print("vq_seqs:", vq_seqs )
-            return vq_seqs, None
+            if not self.hybrid_model.predict_spk:
+                encoder_out, encoder_out_lens = self.hybrid_model.encode(speech_mix, lengths) # n_spk * (bs, lens, enc_dim)
+                ys_hats = [
+                    self.hybrid_model.ce_lo(enc_out) for enc_out in encoder_out
+                ] # n_spk * (bs, lens, proj)
+                vq_seqs = [ys.max(-1)[1] for ys in ys_hats] # n_spk * (bs,lens)
+                print("vq_seqs:", vq_seqs )
+                return vq_seqs, None
+            else:
+                encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.hybrid_model.encode(speech_mix, lengths) # n_spk * (bs, lens, enc_dim)
+                ys_hats = [
+                    self.hybrid_model.ce_lo(enc_out) for enc_out in encoder_out
+                ] # n_spk * (bs, lens, proj)
+                vq_seqs = [ys.max(-1)[1] for ys in ys_hats] # n_spk * (bs,lens)
+                spk_idx_list = [self.hybrid_model.ce_spk(enc_out).argmax(-1) for enc_out in encoder_out_spk] # n_spk*(bs,)
+                print("vq_seqs:", vq_seqs )
+                return vq_seqs, spk_idx_list
+
+
 
         assert len(waves) == self.num_spk, len(waves) == self.num_spk
         assert len(waves[0]) == batch_size, (len(waves[0]), batch_size)
@@ -436,9 +447,9 @@ def inference(
         assert len(keys) == _bs, f"{len(keys)} != {_bs}"
         batch = {k: v for k, v in batch.items() if not k.endswith("_lengths")}
 
-        asr_seqs, waves = separate_speech(**batch)
+        asr_seqs, spk_idx_list= separate_speech(**batch)
 
-        for spk, text in enumerate(asr_seqs):
+        for spk, (text,spk_idx) in enumerate(zip(asr_seqs,spk_idx_list)):
             # text: list of FloatTensor (bs,T)
             assert text.size(0) == 1
             text = text[0] # only work with batchsize of 1
@@ -447,7 +458,7 @@ def inference(
                 # writers[spk][keys[b]] = fs, w[b]
                 asr_writer["text"+str(spk)][keys[b]] = " ".join(map(str, text.data.cpu().numpy()))
             
-                wave = vq_decode(keys[b], text)
+                wave = vq_decode(keys[b], text, spk_idx)
                 writers[spk][keys[b]] = 24000, wave
 
     writer.close()

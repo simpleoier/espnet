@@ -7,7 +7,6 @@ import torch
 from torch_complex.tensor import ComplexTensor
 
 from espnet2.enh.layers.tcn import TemporalConvNet
-from espnet2.enh.separator.abs_separator import AbsSeparator
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
 
 
@@ -25,6 +24,7 @@ class TCNSeparator(AbsEncoder):
         norm_type: str = "gLN",
         nonlinear: str = "relu",
         output_size: int = 0,
+        pooling: str = "max",
     ):
         """Temporal Convolution Separator
 
@@ -46,6 +46,7 @@ class TCNSeparator(AbsEncoder):
         self._output_size = input_size
         self._num_spk = num_spk
         self.num_spkrs = num_spk
+        self.pooling = pooling
         input_dim = input_size
 
         if nonlinear not in ("sigmoid", "relu", "tanh"):
@@ -99,12 +100,17 @@ class TCNSeparator(AbsEncoder):
         # masked = [input * m for m in masks]
         masked = [m for m in masks]
 
+        if self.pooling == "max":
+            masked_spk = [m.max(1)[0] for m in masks]
+        elif self.pooling == "mean":
+            masked_spk = [m.mean(1) for m in masks]
+
         others = OrderedDict(
             zip(["mask_spk{}".format(i + 1) for i in range(len(masks))], masks)
         )
 
         ilens = [ilens for _ in masked]
-        return masked, ilens, others
+        return masked, ilens, masked_spk
 
     @property
     def num_spk(self):

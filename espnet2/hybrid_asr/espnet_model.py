@@ -248,7 +248,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         if self.predict_spk:
             encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
         else:
-            encoder_out, encoder_out_lens= self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
+            encoder_out, encoder_out_lens, *_ = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
 
         ys_hats, ys_hats_lengths, phn_ref1, phn_ref2 = self._compute_output_layer(
             encoder_out,

@@ -1027,8 +1027,8 @@ if ! "${skip_eval}"; then
         mkdir -p "${asr_exp}"; echo "${run_args} --stage 7 \"\$@\"; exit \$?" > "${asr_exp}/run_enhance.sh"; chmod +x "${asr_exp}/run_enhance.sh"
         _opts=
 
-        # for dset in "${valid_set}" ${test_sets}; do
-        for dset in ${test_sets} ; do
+        for dset in "${valid_set}" ${test_sets}; do
+        # for dset in ${test_sets} ; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/enhanced_${dset}"
             _logdir="${_dir}/logdir"
@@ -1130,7 +1130,6 @@ if ! "${skip_eval}"; then
                     ${_inf_scp} \
                     --ref_channel ${ref_channel} \
                     --allow_lengths_mismatch true
-            }
 
             scoring_protocol="STOI SDR SAR SIR"
             for spk in $(seq "${spk_num}"); do
