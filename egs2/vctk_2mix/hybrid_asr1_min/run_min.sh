@@ -13,7 +13,7 @@ train_set="tr_${min_or_max}_${sample_rate}"
 valid_set="cv_${min_or_max}_${sample_rate}"
 test_sets="tt_${min_or_max}_${sample_rate} "
 
-stage=10; stop_stage=13
+stage=10; stop_stage=1000
 #asr_conf=train_asr_rnn_1;
 asr_conf=train_asr_mixrnn_2;
 

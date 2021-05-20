@@ -13,7 +13,7 @@ train_set="tr_${min_or_max}_${sample_rate}"
 valid_set="cv_${min_or_max}_${sample_rate}"
 test_sets="tt_${min_or_max}_${sample_rate} "
 
-stage=9; stop_stage=13
+stage=9; stop_stage=1000
 
 opts=${opts:-}" --expdir exp_melganfrontend" 
 asr_conf=train_asr_melganfrontend_mixrnn_2 
@@ -25,6 +25,7 @@ asr_conf=train_asr_melganfrontend_mixrnn_2
     --test_sets "${test_sets}" \
     --fs "${sample_rate}" \
     --ngpu 1 \
+    --feats_normalize none \
     --local_data_opts "--sample_rate ${sample_rate} --min_or_max ${min_or_max}" \
     --asr_config conf/tuning/${asr_conf}.yaml \
     --token_type phn \

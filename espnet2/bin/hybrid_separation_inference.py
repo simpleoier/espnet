@@ -461,8 +461,6 @@ def inference(
                 wave = vq_decode(keys[b], text, spk_idx)
                 writers[spk][keys[b]] = 24000, wave
 
-    writer.close()
-
 
 def get_parser():
     parser = config_argparse.ArgumentParser(
