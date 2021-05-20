@@ -1029,8 +1029,8 @@ if ! "${skip_eval}"; then
         mkdir -p "${asr_exp}"; echo "${run_args} --stage 7 \"\$@\"; exit \$?" > "${asr_exp}/run_enhance.sh"; chmod +x "${asr_exp}/run_enhance.sh"
         _opts=
 
-        # for dset in "${valid_set}" ${test_sets}; do
-        for dset in ${test_sets} ; do
+        for dset in "${valid_set}" ${test_sets}; do
+        # for dset in ${test_sets} ; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/enhanced_${dset}"
             _logdir="${_dir}/logdir"
@@ -1216,8 +1216,8 @@ if ! "${skip_eval}"; then
         log "Generate '${asr_exp}/${inference_tag}/run.sh'. You can resume the process from stage 13 using this script"
         mkdir -p "${asr_exp}/${inference_tag}"; echo "${run_args} --stage 13 \"\$@\"; exit \$?" > "${asr_exp}/${inference_tag}/run.sh"; chmod +x "${asr_exp}/${inference_tag}/run.sh"
 
-        # for dset in ${valid_set} ${test_sets}; do
-        for dset in ${test_sets}; do
+        for dset in ${valid_set} ${test_sets}; do
+        # for dset in ${test_sets}; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/recognition/decode_${dset}"
 
@@ -1277,7 +1277,8 @@ if ! "${skip_eval}"; then
             exit 1
         fi
 
-        for dset in ${test_sets}; do
+        for dset in ${valid_set} ${test_sets}; do
+        # for dset in ${test_sets}; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/recognition/decode_${dset}"
 
@@ -1310,7 +1311,7 @@ if ! "${skip_eval}"; then
                                 --cleaner "${cleaner}" \
                                 ${opts} \
                                 ) \
-                        <(<"${_data}/text_spk${spk}" awk '{ print "(" $2 "-" $1 ")" }') \
+                        <(<"${_data}/text_spk${spk}" awk '{ print "(" $1 ")" }') \
                             >"${_scoredir}/ref_spk${spk}.trn"
 
                     # NOTE(kamo): Don't use cleaner for hyp
@@ -1323,7 +1324,7 @@ if ! "${skip_eval}"; then
                                 --remove_non_linguistic_symbols true \
                                 ${opts} \
                                 ) \
-                        <(<"${_data}/text_spk${spk}" awk '{ print "(" $2 "-" $1 ")" }') \
+                        <(<"${_data}/text_spk${spk}" awk '{ print "(" $1 ")" }') \
                             >"${_scoredir}/hyp_spk${spk}.trn"
                 done
 
@@ -1354,8 +1355,8 @@ if ! "${skip_eval}"; then
         [ -f local/score.sh ] && local/score.sh ${local_score_opts} "${asr_exp}"
 
         # Show results in Markdown syntax
-        scripts/utils/show_asr_result.sh "${asr_exp}" > "${asr_exp}"/RESULTS.md
-        cat "${asr_exp}"/RESULTS.md
+        scripts/utils/show_asr_result.sh "${asr_exp}" > "${asr_exp}"/RESULTS_ASR.md
+        cat "${asr_exp}"/RESULTS_ASR.md
 
     fi
 else

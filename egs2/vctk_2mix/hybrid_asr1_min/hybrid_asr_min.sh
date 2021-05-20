@@ -113,7 +113,7 @@ inference_asr_model=valid.acc.ave.pth # ASR model path for decoding.
                                       # inference_asr_model=3epoch.pth
                                       # inference_asr_model=valid.acc.best.pth
                                       # inference_asr_model=valid.loss.ave.pth
-download_model= # Download a model from Model Zoo and use it for decoding.
+download_model="kamo-naoyuki/librispeech_asr_train_asr_conformer6_n_fft512_hop_length256_raw_en_bpe5000_scheduler_confwarmup_steps40000_optim_conflr0.0025_sp_valid.acc.ave" # Download a model from Model Zoo and use it for decoding.
 
 # [Task dependent] Set the datadir name created by local/data.sh
 train_set=       # Name of training set.
@@ -693,6 +693,7 @@ if ! "${skip_train}"; then
                     --token_type "${lm_token_type}"\
                     --token_list "${lm_token_list}" \
                     --non_linguistic_symbols "${nlsyms_txt}" \
+                    --unk_symbol "none" \
                     --cleaner "${cleaner}" \
                     --g2p "${g2p}" \
                     --train_data_path_and_name_and_type "${data_feats}/lm_train.txt,text,text" \
@@ -785,6 +786,7 @@ if ! "${skip_train}"; then
                     --token_type "${lm_token_type}"\
                     --token_list "${lm_token_list}" \
                     --non_linguistic_symbols "${nlsyms_txt}" \
+                    --unk_symbol "none" \
                     --cleaner "${cleaner}" \
                     --g2p "${g2p}" \
                     --valid_data_path_and_name_and_type "${data_feats}/lm_dev.txt,text,text" \
@@ -1028,7 +1030,7 @@ if ! "${skip_eval}"; then
         _opts=
 
         for dset in "${valid_set}" ${test_sets}; do
-        # for dset in ${test_sets} ; do
+        # for dset in ${test_sets}; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/enhanced_${dset}"
             _logdir="${_dir}/logdir"
@@ -1152,6 +1154,210 @@ if ! "${skip_eval}"; then
         ./scripts/utils/show_enh_score.sh ${asr_exp} > "${asr_exp}/RESULTS.md"
 
     fi
+
+    if [ -n "${download_model}" ]; then
+        log "Use ${download_model} for decoding and evaluation"
+        mkdir -p "${asr_exp}/recognition/${download_model}"
+
+        # If the model already exists, you can skip downloading
+        espnet_model_zoo_download --unpack true "${download_model}" > "${asr_exp}/recognition/config.txt"
+
+        # Get the path of each file
+        _asr_model_file=$(<"${asr_exp}/recognition/config.txt" sed -e "s/.*'asr_model_file': '\([^']*\)'.*$/\1/")
+        _asr_train_config=$(<"${asr_exp}/recognition/config.txt" sed -e "s/.*'asr_train_config': '\([^']*\)'.*$/\1/")
+
+        # Create symbolic links
+        ln -sf "${_asr_model_file}" "${asr_exp}/recognition"
+        ln -sf "${_asr_train_config}" "${asr_exp}/recognition"
+        inference_asr_model=$(basename "${_asr_model_file}")
+
+        if [ "$(<${asr_exp}/recognition/config.txt grep -c lm_file)" -gt 0 ]; then
+            _lm_file=$(<"${asr_exp}/recognition/config.txt" sed -e "s/.*'lm_file': '\([^']*\)'.*$/\1/")
+            _lm_train_config=$(<"${asr_exp}/recognition/config.txt" sed -e "s/.*'lm_train_config': '\([^']*\)'.*$/\1/")
+
+            lm_exp="${asr_exp}/recognition/${download_model}/lm"
+            mkdir -p "${lm_exp}"
+
+            ln -sf "${_lm_file}" "${lm_exp}"
+            ln -sf "${_lm_train_config}" "${lm_exp}"
+            inference_lm=$(basename "${_lm_file}")
+        fi
+
+    fi
+
+
+    if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ]; then
+        log "Stage 13: Speech Recognition: training_dir=${asr_exp}"
+
+        if ${gpu_inference}; then
+            _cmd="${cuda_cmd}"
+            _ngpu=1
+        else
+            _cmd="${decode_cmd}"
+            _ngpu=0
+        fi
+
+        _opts=
+        if [ -n "${inference_config}" ]; then
+            _opts+="--config ${inference_config} "
+        fi
+        if "${use_lm}"; then
+            if "${use_word_lm}"; then
+                _opts+="--word_lm_train_config ${lm_exp}/config.yaml "
+                _opts+="--word_lm_file ${lm_exp}/${inference_lm} "
+            else
+                _opts+="--lm_train_config ${lm_exp}/config.yaml "
+                _opts+="--lm_file ${lm_exp}/${inference_lm} "
+            fi
+        fi
+
+        # 2. Generate run.sh
+        log "Generate '${asr_exp}/${inference_tag}/run.sh'. You can resume the process from stage 13 using this script"
+        mkdir -p "${asr_exp}/${inference_tag}"; echo "${run_args} --stage 13 \"\$@\"; exit \$?" > "${asr_exp}/${inference_tag}/run.sh"; chmod +x "${asr_exp}/${inference_tag}/run.sh"
+
+        for dset in ${valid_set} ${test_sets}; do
+        # for dset in ${valid_set}; do
+            _data="${data_feats}/${dset}"
+            _dir="${asr_exp}/recognition/decode_${dset}"
+
+            _enh_inf_dir="${asr_exp}/enhanced_${dset}"
+            for spk in $(seq "${spk_num}"); do
+                scripts/audio/format_wav_scp.sh --nj "${nj}" --cmd "${train_cmd}" \
+                        --out-filename "resampled_spk${spk}.scp" \
+                        --audio-format "${audio_format}" --fs "16000" \
+                        "${_enh_inf_dir}/spk${spk}.scp" "${_dir}/resampled_audios" \
+                        "${_dir}/resampled_audios/logs/spk${spk}" "${_dir}/resampled_audios/data/spk${spk}"
+
+                _scp=resampled_spk${spk}.scp
+                _type=sound
+
+                _logdir="${_dir}/logdir_spk${spk}"
+                mkdir -p "${_logdir}"
+
+                # 1. Split the key file
+                key_file=${_dir}/resampled_audios/${_scp}
+                split_scps=""
+                _nj=$(min "${inference_nj}" "$(<${key_file} wc -l)")
+                for n in $(seq "${_nj}"); do
+                    split_scps+=" ${_logdir}/keys.${n}.scp"
+                done
+                # shellcheck disable=SC2086
+                utils/split_scp.pl "${key_file}" ${split_scps}
+
+                # 2. Submit decoding jobs
+                log "Decoding started... log: '${_logdir}/asr_inference.*.log'"
+                # shellcheck disable=SC2086
+                ${_cmd} --gpu "${_ngpu}" JOB=1:"${_nj}" "${_logdir}"/asr_inference.JOB.log \
+                    ${python} -m espnet2.bin.asr_inference \
+                        --ngpu "${_ngpu}" \
+                        --data_path_and_name_and_type "${_dir}/resampled_audios/${_scp},speech,${_type}" \
+                        --key_file "${_logdir}"/keys.JOB.scp \
+                        --asr_train_config "${asr_exp}"/recognition/config.yaml \
+                        --asr_model_file "${asr_exp}"/recognition/"${inference_asr_model}" \
+                        --output_dir "${_logdir}"/output.JOB \
+                        ${_opts} ${inference_args}
+
+                # 3. Concatenates the output files from each jobs
+                for f in token token_int score text; do
+                    for i in $(seq "${_nj}"); do
+                        cat "${_logdir}/output.${i}/1best_recog/${f}"
+                    done | LC_ALL=C sort -k1 >"${_dir}/${f}_spk${spk}"
+                done
+            done
+        done
+    fi
+
+
+    if [ ${stage} -le 14 ] && [ ${stop_stage} -ge 14 ]; then
+        log "Stage 14: ASR Scoring"
+        token_type="word"
+        if [ "${token_type}" = phn ]; then
+            log "Error: Not implemented for token_type=phn"
+            exit 1
+        fi
+
+        for dset in ${valid_set} ${test_sets}; do
+        # for dset in ${valid_set}; do
+            _data="${data_feats}/${dset}"
+            _dir="${asr_exp}/recognition/decode_${dset}"
+
+            for _type in cer wer ter; do
+                [ "${_type}" = ter ] && [ ! -f "${bpemodel}" ] && continue
+
+                _scoredir="${_dir}/score_${_type}"
+                mkdir -p "${_scoredir}"
+
+                if [ "${_type}" = wer ]; then
+                    token_type="word"
+                    opts=""
+                elif [ "${_type}" = cer ]; then
+                    token_type="char"
+                    opts=""
+                elif [ "${_type}" = ter ]; then
+                    token_type="bpe"
+                    opts="--bpemodel ${bpemodel} "
+                fi
+
+                for spk in $(seq "${spk_num}"); do
+                    # Tokenize text to word level
+                    paste \
+                        <(<"${_data}/text_spk${spk}" \
+                            ${python} -m espnet2.bin.tokenize_text  \
+                                -f 2- --input - --output - \
+                                --token_type ${token_type} \
+                                --non_linguistic_symbols "${nlsyms_txt}" \
+                                --remove_non_linguistic_symbols true \
+                                --cleaner "${cleaner}" \
+                                ${opts} \
+                                ) \
+                        <(<"${_data}/text_spk${spk}" awk '{ print "(" $1 ")" }') \
+                            >"${_scoredir}/ref_spk${spk}.trn"
+
+                    # NOTE(kamo): Don't use cleaner for hyp
+                    paste \
+                        <(<"${_dir}/text_spk${spk}"  \
+                            ${python} -m espnet2.bin.tokenize_text  \
+                                -f 2- --input - --output - \
+                                --token_type ${token_type} \
+                                --non_linguistic_symbols "${nlsyms_txt}" \
+                                --remove_non_linguistic_symbols true \
+                                ${opts} \
+                                ) \
+                        <(<"${_data}/text_spk${spk}" awk '{ print "(" $1 ")" }') \
+                            >"${_scoredir}/hyp_spk${spk}.trn"
+                done
+
+                # PIT scoring
+                for r_spk in $(seq "${spk_num}"); do
+                    for h_spk in $(seq "${spk_num}"); do
+                        sclite \
+                            -r "${_scoredir}/ref_spk${r_spk}.trn" trn \
+                            -h "${_scoredir}/hyp_spk${h_spk}.trn" trn \
+                            -i rm -o all stdout > "${_scoredir}/result_r${r_spk}h${h_spk}.txt"
+                    done
+                done
+
+                scripts/utils/eval_perm_free_error.py --num-spkrs ${spk_num} \
+                    --results-dir ${_scoredir}
+
+                sclite \
+                    ${score_opts} \
+                    -r "${_scoredir}/ref.trn" trn \
+                    -h "${_scoredir}/hyp.trn" trn \
+                    -i rm -o all stdout > "${_scoredir}/result.txt"
+
+                log "Write ${_type} result in ${_scoredir}/result.txt"
+                grep -e Avg -e SPKR -m 2 "${_scoredir}/result.txt"
+            done
+        done
+
+        [ -f local/score.sh ] && local/score.sh ${local_score_opts} "${asr_exp}"
+
+        # Show results in Markdown syntax
+        scripts/utils/show_asr_result.sh "${asr_exp}" > "${asr_exp}"/RESULTS_ASR.md
+        cat "${asr_exp}"/RESULTS_ASR.md
+
+    fi
 else
     log "Skip the evaluation stages"
 fi
@@ -1159,8 +1365,8 @@ fi
 
 packed_model="${asr_exp}/${asr_exp##*/}_${inference_model%.*}.zip"
 if ! "${skip_upload}"; then
-    if [ ${stage} -le 13 ] && [ ${stop_stage} -ge 13 ]; then
-        log "Stage 13: Pack model: ${packed_model}"
+    if [ ${stage} -le 15 ] && [ ${stop_stage} -ge 15 ]; then
+        log "Stage 15: Pack model: ${packed_model}"
 
         ${python} -m espnet2.bin.pack enh \
             --train_config "${asr_exp}"/config.yaml \
@@ -1172,8 +1378,8 @@ if ! "${skip_upload}"; then
     fi
 
 
-    if [ ${stage} -le 14 ] && [ ${stop_stage} -ge 14 ]; then
-        log "Stage 14: Upload model to Zenodo: ${packed_model}"
+    if [ ${stage} -le 16 ] && [ ${stop_stage} -ge 16 ]; then
+        log "Stage 16: Upload model to Zenodo: ${packed_model}"
 
         # To upload your model, you need to do:
         #   1. Sign up to Zenodo: https://zenodo.org/
