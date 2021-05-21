@@ -11,8 +11,8 @@ from espnet2.tasks.lm import LMTask
 
 def get_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lm_file", type=str, default=None, help="lm file.")
-    parser.add_argument("--ngram", type=int, default=None, help="ngram")
+    parser.add_argument("--lm_file", type=str, default='./3gram_lm.arpa', help="lm file.")
+    parser.add_argument("--ngram", type=int, default=3, help="ngram")
     return parser
 
 

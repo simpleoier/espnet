@@ -31,6 +31,7 @@ from espnet2.asr.encoder.rnn_encoder import RNNEncoder
 from espnet2.asr.encoder.rnn_encoder_mix import RNNEncoderMix
 from espnet2.asr.encoder.rnn_encoder_mix_withSpk import RNNEncoderMix_spk
 from espnet2.asr.encoder.tcn_separator import TCNSeparator
+from espnet2.asr.encoder.dprnn_separator import DPRNNSeparator
 from espnet2.asr.encoder.transformer_encoder import TransformerEncoder
 from espnet2.asr.encoder.contextual_block_transformer_encoder import (
     ContextualBlockTransformerEncoder,  # noqa: H301
@@ -38,6 +39,7 @@ from espnet2.asr.encoder.contextual_block_transformer_encoder import (
 from espnet2.asr.encoder.vgg_rnn_encoder import VGGRNNEncoder
 from espnet2.asr.encoder.wav2vec2_encoder import FairSeqWav2Vec2Encoder
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
+from espnet2.asr.frontend.conv_frontend import ConvEncoder
 from espnet2.asr.frontend.default import DefaultFrontend
 from espnet2.asr.frontend.melgan import MelGANDiscriminator
 from espnet2.asr.frontend.windowing import SlidingWindow
@@ -69,6 +71,7 @@ frontend_choices = ClassChoices(
         default=DefaultFrontend,
         sliding_window=SlidingWindow,
         melgan=MelGANDiscriminator,
+        conv=ConvEncoder,
     ),
     type_check=AbsFrontend,
     default="default",
@@ -111,6 +114,7 @@ encoder_choices = ClassChoices(
         rnn_mix=RNNEncoderMix,
         rnn_mix_spk=RNNEncoderMix_spk,
         tcn=TCNSeparator,
+        dprnn=DPRNNSeparator,
     ),
     type_check=AbsEncoder,
     default="rnn",

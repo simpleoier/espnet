@@ -6,40 +6,39 @@ from typing import Union
 import torch
 from torch_complex.tensor import ComplexTensor
 
-from espnet2.enh.layers.tcn import TemporalConvNet
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
+from espnet2.enh.layers.dprnn import DPRNN
+from espnet2.enh.layers.dprnn import merge_feature
+from espnet2.enh.layers.dprnn import split_feature
 
 
-class TCNSeparator(AbsEncoder):
+class DPRNNSeparator(AbsEncoder):
     def __init__(
         self,
         input_size: int,
+        rnn_type: str = "lstm",
+        bidirectional: bool = True,
         num_spk: int = 2,
-        layer: int = 8,
-        stack: int = 3,
-        bottleneck_dim: int = 128,
-        hidden_dim: int = 512,
-        kernel: int = 3,
-        causal: bool = False,
-        norm_type: str = "gLN",
         nonlinear: str = "relu",
-        output_size: int = 0,
+        layer: int = 3,
+        unit: int = 512,
+        segment_size: int = 20,
+        dropout: float = 0.0,
         pooling: str = "max",
     ):
-        """Temporal Convolution Separator
+        """Dual-Path RNN (DPRNN) Separator
 
         Args:
             input_dim: input feature dimension
+            rnn_type: string, select from 'RNN', 'LSTM' and 'GRU'.
+            bidirectional: bool, whether the inter-chunk RNN layers are bidirectional.
             num_spk: number of speakers
-            layer: int, number of layers in each stack.
-            stack: int, number of stacks
-            bottleneck_dim: bottleneck dimension
-            hidden_dim: number of convolution channel
-            kernel: int, kernel size.
-            causal: bool, defalut False.
-            norm_type: str, choose from 'BN', 'gLN', 'cLN'
             nonlinear: the nonlinear function for mask estimation,
                        select from 'relu', 'tanh', 'sigmoid'
+            layer: int, number of stacked RNN layers. Default is 3.
+            unit: int, dimension of the hidden state.
+            segment_size: dual-path segment size
+            dropout: float, dropout ratio. Default is 0.
         """
         super().__init__()
 
@@ -49,21 +48,28 @@ class TCNSeparator(AbsEncoder):
         self.pooling = pooling
         input_dim = input_size
 
+        self._num_spk = num_spk
+
+        self.segment_size = segment_size
+
+        self.dprnn = DPRNN(
+            rnn_type=rnn_type,
+            input_size=input_dim,
+            hidden_size=unit,
+            output_size=input_dim * num_spk,
+            dropout=dropout,
+            num_layers=layer,
+            bidirectional=bidirectional,
+        )
+
         if nonlinear not in ("sigmoid", "relu", "tanh"):
             raise ValueError("Not supporting nonlinear={}".format(nonlinear))
 
-        self.tcn = TemporalConvNet(
-            N=input_dim,
-            B=bottleneck_dim,
-            H=hidden_dim,
-            P=kernel,
-            X=layer,
-            R=stack,
-            C=num_spk,
-            norm_type=norm_type,
-            causal=causal,
-            mask_nonlinear=nonlinear,
-        )
+        self.nonlinear = {
+            "sigmoid": torch.nn.Sigmoid(),
+            "relu": torch.nn.ReLU(),
+            "tanh": torch.nn.Tanh(),
+        }[nonlinear]
 
     def forward(
         self, input: Union[torch.Tensor, ComplexTensor], ilens: torch.Tensor
@@ -84,20 +90,28 @@ class TCNSeparator(AbsEncoder):
                 'mask_spkn': torch.Tensor(Batch, Frames, Freq),
             ]
         """
-        # if complex spectrum
+
+        # if complex spectrum,
         if isinstance(input, ComplexTensor):
             feature = abs(input)
         else:
             feature = input
-        B, L, N = feature.shape
 
-        feature = feature.transpose(1, 2)  # B, N, L
+        B, T, N = feature.shape
 
-        masks = self.tcn(feature)  # B, num_spk, N, L
-        masks = masks.transpose(2, 3)  # B, num_spk, L, N
-        masks = masks.unbind(dim=1)  # List[B, L, N]
+        feature = feature.transpose(1, 2)  # B, N, T
+        segmented, rest = split_feature(
+            feature, segment_size=self.segment_size
+        )  # B, N, L, K
 
-        # masked = [input * m for m in masks]
+        processed = self.dprnn(segmented)  # B, N*num_spk, L, K
+
+        processed = merge_feature(processed, rest)  # B, N*num_spk, T
+
+        processed = processed.transpose(1, 2)  # B, T, N*num_spk
+        processed = processed.view(B, T, N, self.num_spk)
+        masks = self.nonlinear(processed).unbind(dim=3)
+
         masked = [m for m in masks]
 
         if self.pooling == "max":
@@ -110,7 +124,7 @@ class TCNSeparator(AbsEncoder):
         )
 
         ilens = [ilens for _ in masked]
-        return masked, ilens, masked_spk
+        return masked, ilens, others
 
     @property
     def num_spk(self):
