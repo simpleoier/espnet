@@ -12,6 +12,7 @@ from typing import Tuple
 from typing import Union
 
 import humanfriendly
+import kenlm
 import numpy as np
 import parallel_wavegan.models
 import soundfile as sf
@@ -19,20 +20,21 @@ import torch
 from tqdm import trange
 from typeguard import check_argument_types
 import yaml
-
 from espnet.utils.cli_utils import get_commandline_args
 from espnet2.fileio.datadir_writer import DatadirWriter
 from espnet2.fileio.sound_scp import SoundScpWriter
+from espnet2.hybrid_asr.beam_search import BeamSearch
 from espnet2.hybrid_asr.loss_weights import idx_to_vq
+from espnet2.lm.ken_lm import kenlmLM
 # from espnet2.tasks.enh import
 from espnet2.tasks.hybrid_asr import ASRTask 
+from espnet2.tasks.lm import LMTask
 from espnet2.torch_utils.device_funcs import to_device
 from espnet2.torch_utils.set_all_random_seed import set_all_random_seed
 from espnet2.utils import config_argparse
 from espnet2.utils.types import str2bool
 from espnet2.utils.types import str2triple_str
 from espnet2.utils.types import str_or_none
-
 
 
 
@@ -141,6 +143,12 @@ class SeparateSpeech:
         normalize_output_wav: bool = False,
         device: str = "cpu",
         dtype: str = "float32",
+        beam_size: int = 10,
+        asr_weight: float = 1.0,
+        lm_weight: float = 1.0,
+        use_beam_search: bool = False,
+        kenlm_file: str = None,
+        ngram: int = None,
     ):
         assert check_argument_types()
 
@@ -155,6 +163,36 @@ class SeparateSpeech:
         self.enh_train_args = enh_train_args
         self.hybrid_model = hybrid_model
 
+        token_list = hybrid_model.token_list
+        weights = dict(
+            asr=asr_weight,
+            lm=lm_weight,
+        )
+
+        self.use_beam_search = use_beam_search
+        if use_beam_search:
+            lm_model = kenlmLM(
+                token_list=token_list,
+                lm_file=kenlm_file,
+                ngram=ngram,
+            )
+            sos = None
+            # lm, _ = LMTask.build_model_from_file(
+            #     config_file="/export/c05/xkc09/asr/vctk-2mix-vq/exp/lm_train_lm_rnn_phn/config.yaml",
+            #     model_file="/export/c05/xkc09/asr/vctk-2mix-vq/exp/lm_train_lm_rnn_phn/valid.loss.ave.pth",
+            #     device="cpu",
+            # )
+            # lm_model = lm.lm
+            # sos = len(token_list) - 1
+
+        self.beam_search = BeamSearch(
+            lm_model=lm_model,
+            beam_size=beam_size,
+            weights=weights,
+            n_vocab=len(token_list),
+            token_list=token_list,
+            sos=sos,
+        )
 
         # only used when processing long speech, i.e.
         # segment_size is not None and hop_size is not None
@@ -296,10 +334,12 @@ class SeparateSpeech:
                 return vq_seqs, None
             else:
                 encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.hybrid_model.encode(speech_mix, lengths) # n_spk * (bs, lens, enc_dim)
-                ys_hats = [
-                    self.hybrid_model.ce_lo(enc_out) for enc_out in encoder_out
-                ] # n_spk * (bs, lens, proj)
-                vq_seqs = [ys.max(-1)[1] for ys in ys_hats] # n_spk * (bs,lens)
+                if self.use_beam_search:
+                    vq_seqs = []  # nbest vq_hyp seqs.
+                    for _, ys in enumerate(ys_hats):
+                        vq_seqs.append(self.beam_search(ys))
+                else:
+                    vq_seqs = [ys.max(-1)[1] for ys in ys_hats] # n_spk * (bs,lens)
                 spk_idx_list = [self.hybrid_model.ce_spk(enc_out).argmax(-1) for enc_out in encoder_out_spk] # n_spk*(bs,)
                 print("vq_seqs:", vq_seqs )
                 return vq_seqs, spk_idx_list
@@ -383,6 +423,12 @@ def inference(
     show_progressbar: bool,
     ref_channel: Optional[int],
     normalize_output_wav: bool,
+    beam_size: int = 10,
+    asr_weight: float = 1.0,
+    lm_weight: float = 1.0,
+    use_beam_search: bool = False,
+    kenlm_file: str = None,
+    ngram: int = None,
 ):
     assert check_argument_types()
     if batch_size > 1:
@@ -415,6 +461,12 @@ def inference(
         normalize_output_wav=normalize_output_wav,
         device=device,
         dtype=dtype,
+        beam_size=beam_size,
+        asr_weight=asr_weight,
+        lm_weight=lm_weight,
+        use_beam_search=use_beam_search,
+        kenlm_file=kenlm_file,
+        ngram=ngram,
     )
 
     # 3. Build data-iterator
