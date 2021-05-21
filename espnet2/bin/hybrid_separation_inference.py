@@ -43,7 +43,7 @@ def vq_decode(utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_co
     vq_seq = torch.LongTensor([idx_to_vq[idx] for idx in idx_seq]).to(idx_seq.device)
     assert vq_seq.shape == idx_seq.shape
     checkpoint=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/checkpoint-5000000steps.pkl"
-    config=default=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/config.yml" 
+    config=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/config.yml" 
     verbose=1
 
     # set logger
@@ -71,7 +71,8 @@ def vq_decode(utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_co
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-    device = torch.device("cpu")
+    # device = torch.device("cpu")
+    device = idx_seq.device
     model_class = getattr(
         parallel_wavegan.models,
         config.get("generator_type", "ParallelWaveGANGenerator"))
@@ -94,7 +95,8 @@ def vq_decode(utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_co
 
     # start generation
     with torch.no_grad():
-        z = torch.LongTensor(vq_seq).view(1, -1).to(device)
+        # z = torch.LongTensor(vq_seq).view(1, -1).to(device)
+        z = vq_seq.long().view(1, -1).to(device)
         g = None
         if utt2spk is not None:
             spk_idx = spk2idx[utt2spk[utt_id]]
@@ -449,17 +451,36 @@ def inference(
 
         asr_seqs, spk_idx_list= separate_speech(**batch)
 
-        for spk, (text,spk_idx) in enumerate(zip(asr_seqs,spk_idx_list)):
-            # text: list of FloatTensor (bs,T)
-            assert text.size(0) == 1
-            text = text[0] # only work with batchsize of 1
-            print("text.shape:",text.shape)
-            for b in range(batch_size):
-                # writers[spk][keys[b]] = fs, w[b]
-                asr_writer["text"+str(spk)][keys[b]] = " ".join(map(str, text.data.cpu().numpy()))
-            
-                wave = vq_decode(keys[b], text, spk_idx)
-                writers[spk][keys[b]] = 24000, wave
+        # print('uttid:',keys[0], ys_hats[0].shape)
+        # np.save(open('/tmp/spk1_vq_hats_{}.npy'.format(keys[0]),'wb'), ys_hats[0].data.cpu().numpy())
+        # np.save(open('/tmp/spk2_vq_hats_{}.npy'.format(keys[0]),'wb'), ys_hats[1].data.cpu().numpy())
+        # 1/0
+
+
+        if spk_idx_list != None: # spk_Idx inferred by the model
+            for spk, (text,spk_idx) in enumerate(zip(asr_seqs,spk_idx_list)):
+                # text: list of FloatTensor (bs,T)
+                assert text.size(0) == 1
+                text = text[0] # only work with batchsize of 1
+                print("text.shape:",text.shape)
+                for b in range(batch_size):
+                    # writers[spk][keys[b]] = fs, w[b]
+                    asr_writer["text"+str(spk)][keys[b]] = " ".join(map(str, text.data.cpu().numpy()))
+                
+                    wave = vq_decode(keys[b], text, spk_idx)
+                    writers[spk][keys[b]] = 24000, wave
+        else: # no-prediction of spks
+            for spk, text in enumerate(asr_seqs):
+                # text: list of FloatTensor (bs,T)
+                assert text.size(0) == 1
+                text = text[0] # only work with batchsize of 1
+                print("text.shape:",text.shape)
+                for b in range(batch_size):
+                    # writers[spk][keys[b]] = fs, w[b]
+                    asr_writer["text"+str(spk)][keys[b]] = " ".join(map(str, text.data.cpu().numpy()))
+                
+                    wave = vq_decode(keys[b], text, 3) # special Target SPK ID
+                    writers[spk][keys[b]] = 24000, wave
 
 
 def get_parser():
