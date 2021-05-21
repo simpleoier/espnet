@@ -185,14 +185,14 @@ class SeparateSpeech:
             # lm_model = lm.lm
             # sos = len(token_list) - 1
 
-        self.beam_search = BeamSearch(
-            lm_model=lm_model,
-            beam_size=beam_size,
-            weights=weights,
-            n_vocab=len(token_list),
-            token_list=token_list,
-            sos=sos,
-        )
+            self.beam_search = BeamSearch(
+                lm_model=lm_model,
+                beam_size=beam_size,
+                weights=weights,
+                n_vocab=len(token_list),
+                token_list=token_list,
+                sos=sos,
+            )
 
         # only used when processing long speech, i.e.
         # segment_size is not None and hop_size is not None
@@ -334,6 +334,9 @@ class SeparateSpeech:
                 return vq_seqs, None
             else:
                 encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.hybrid_model.encode(speech_mix, lengths) # n_spk * (bs, lens, enc_dim)
+                ys_hats = [
+                    self.hybrid_model.ce_lo(enc_out) for enc_out in encoder_out
+                ] # n_spk * (bs, lens, proj)
                 if self.use_beam_search:
                     vq_seqs = []  # nbest vq_hyp seqs.
                     for _, ys in enumerate(ys_hats):
