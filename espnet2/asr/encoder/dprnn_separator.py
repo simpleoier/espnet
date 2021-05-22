@@ -124,7 +124,7 @@ class DPRNNSeparator(AbsEncoder):
         )
 
         ilens = [ilens for _ in masked]
-        return masked, ilens, others
+        return masked, ilens, masked_spk
 
     @property
     def num_spk(self):

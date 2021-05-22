@@ -246,7 +246,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
 
         # 1. Encoder
         if self.predict_spk:
-            encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
+            encoder_out, encoder_out_lens, encoder_out_spk, *_ = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
         else:
             encoder_out, encoder_out_lens, *_ = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
 
@@ -562,7 +562,8 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         # feats: (Batch, Length, Dim)
         # -> encoder_out: (Batch, Length2, Dim2)
         if self.predict_spk:
-            encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.encoder(feats, feats_lengths)
+            # encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.encoder(feats, feats_lengths)
+            encoder_out, encoder_out_lens, encoder_out_spk, *_ = self.encoder(feats, feats_lengths)
         else:
             encoder_out, encoder_out_lens, _ = self.encoder(feats, feats_lengths)
 
@@ -585,7 +586,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             )
 
         if self.predict_spk:
-            return encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk
+            return encoder_out, encoder_out_lens, encoder_out_spk
         else:
             return encoder_out, encoder_out_lens
 

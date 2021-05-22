@@ -348,7 +348,8 @@ class ASRTask(AbsTask):
             # Overwriting token_list to keep it as "portable".
             args.token_list = list(token_list)
         elif isinstance(args.token_list, (tuple, list)):
-            token_list = list(args.token_list)[:-1]     # Remove the <sos>/<eos> symbol
+            token_list = list(args.token_list)     # Remove the <sos>/<eos> symbol
+            token_list = token_list[-1] if token_list[-1] == "<sos>/<eos>" else token_list
         else:
             raise RuntimeError("token_list must be str or list")
         vocab_size = len(token_list)
