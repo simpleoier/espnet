@@ -1,4 +1,5 @@
 lm_weight: 0.3
 use_beam_search: true
-kenlm_file: ./lm/6gram.arpa
+kenlm_file: ./lm/6gram_lm.arpa
 ngram: 6
+beam_size: 5

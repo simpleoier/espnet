@@ -164,6 +164,7 @@ class SeparateSpeech:
         self.hybrid_model = hybrid_model
 
         token_list = hybrid_model.token_list
+        print("token_list:",token_list)
         weights = dict(
             asr=asr_weight,
             lm=lm_weight,
@@ -189,9 +190,8 @@ class SeparateSpeech:
                 lm_model=lm_model,
                 beam_size=beam_size,
                 weights=weights,
-                n_vocab=len(token_list),
                 token_list=token_list,
-                sos=sos,
+                sos=sos, # n_vocab=len(token_list),
             )
 
         # only used when processing long speech, i.e.
@@ -333,7 +333,7 @@ class SeparateSpeech:
                 print("vq_seqs:", vq_seqs )
                 return vq_seqs, None
             else:
-                encoder_out, encoder_out_lens, encoder_out_spk, encoder_out_lens_spk = self.hybrid_model.encode(speech_mix, lengths) # n_spk * (bs, lens, enc_dim)
+                encoder_out, encoder_out_lens, encoder_out_spk = self.hybrid_model.encode(speech_mix, lengths) # n_spk * (bs, lens, enc_dim)
                 ys_hats = [
                     self.hybrid_model.ce_lo(enc_out) for enc_out in encoder_out
                 ] # n_spk * (bs, lens, proj)
@@ -341,6 +341,7 @@ class SeparateSpeech:
                     vq_seqs = []  # nbest vq_hyp seqs.
                     for _, ys in enumerate(ys_hats):
                         vq_seqs.append(self.beam_search(ys))
+                    # print("vq_seqs:", vq_seqs[0])
                 else:
                     vq_seqs = [ys.max(-1)[1] for ys in ys_hats] # n_spk * (bs,lens)
                 spk_idx_list = [self.hybrid_model.ce_spk(enc_out).argmax(-1) for enc_out in encoder_out_spk] # n_spk*(bs,)
@@ -644,7 +645,13 @@ def get_parser():
     group.add_argument(
         "--lm_weight",
         type=float,
-        default=None,
+        default=0.0,
+        help="language model weight.",
+    )
+    group.add_argument(
+        "--beam_size",
+        type=int,
+        default=10,
         help="language model weight.",
     )
     group.add_argument(
@@ -662,7 +669,7 @@ def get_parser():
     group.add_argument(
         "--ngram",
         type=int,
-        default=None,
+        default=0,
         help="n of ngram language model.",
     )
 

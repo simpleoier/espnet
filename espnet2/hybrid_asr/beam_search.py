@@ -166,6 +166,7 @@ class BeamSearch(torch.nn.Module):
         self,
         asr_outputs: torch.Tensor,  # ASR negative log likelihood / posterior
     ):
+        asr_outputs = asr_outputs[0]
         assert len(asr_outputs.shape) == 2
         seq_len, odim = asr_outputs.shape
         assert odim == self.n_vocab, f'{odim} vs. {self.n_vocab}'
@@ -181,4 +182,5 @@ class BeamSearch(torch.nn.Module):
             running_hyps = best_hyps
         
         nbest_hyps = sorted(best_hyps, key=lambda x: x.score, reverse=True)
-        return nbest_hyps
+        # print('nbest_hyps:', nbest_hyps)
+        return nbest_hyps[0].yseq.unsqueeze(0)

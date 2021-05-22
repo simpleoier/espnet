@@ -69,6 +69,7 @@ lm_exp=           # Specify the direcotry path for LM experiment.
                   # If this option is specified, lm_tag is ignored.
 lm_stats_dir=     # Specify the direcotry path for LM statistics.
 lm_config=        # Config for language model training.
+lm_infer_config=""        # Config for language model training.
 lm_args=          # Arguments for language model training, e.g., "--max_epoch 10".
                   # Note that it will overwrite args in lm config.
 use_word_lm=false # Whether to use word language model.
@@ -1028,7 +1029,14 @@ if ! "${skip_eval}"; then
 
         log "Generate '${asr_exp}/run_enhance.sh'. You can resume the process from stage 7 using this script"
         mkdir -p "${asr_exp}"; echo "${run_args} --stage 7 \"\$@\"; exit \$?" > "${asr_exp}/run_enhance.sh"; chmod +x "${asr_exp}/run_enhance.sh"
-        _opts=
+        # _opts=
+        if [ -n "${lm_infer_config}" ]; then
+            # To generate the config file: e.g.
+            #   % python3 -m espnet2.bin.enh_train --print_config --optim adam
+            _opts+="--config ${lm_infer_config} "
+        else
+            _opts+=""
+        fi
 
         for dset in "${valid_set}" ${test_sets}; do
         # for dset in ${test_sets} ; do

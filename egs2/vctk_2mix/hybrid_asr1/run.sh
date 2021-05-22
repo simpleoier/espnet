@@ -13,7 +13,7 @@ train_set="tr_${min_or_max}_${sample_rate}"
 valid_set="cv_${min_or_max}_${sample_rate}"
 test_sets="tt_${min_or_max}_${sample_rate} "
 
-stage=7; stop_stage=8
+stage=7; stop_stage=100
 opts=${opts:-}" --expdir exp"
 #asr_conf=train_asr_rnn_1;
 #asr_conf=train_asr_mixrnn_2;
@@ -28,6 +28,7 @@ asr_conf=train_asr_mixrnn_2_chunk;
 
 #lm_conf=train_lm_rnn
 lm_conf=train_lm_adam_layers3
+lm_infer_conf=decoee_w_kenlm
 
 ./hybrid_asr.sh \
     --stage ${stage} --stop_stage ${stop_stage} \
@@ -39,6 +40,7 @@ lm_conf=train_lm_adam_layers3
     --local_data_opts "--sample_rate ${sample_rate} --min_or_max ${min_or_max}" \
     --asr_config conf/tuning/${asr_conf}.yaml \
     --lm_config conf/${lm_conf}.yaml \
+    --lm_infer_config conf/${lm_conf}.yaml \
     --token_type phn \
     --lm_train_text "dump/raw/lm_train.txt" \
     --lm_dev_text "dump/raw/lm_dev.txt" \
