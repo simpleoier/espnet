@@ -55,24 +55,25 @@ def load_data():
 def main(args):
     token_list = []
     with open("../data/token_list/phn/tokens.txt", "r") as f:
-        for line in f.readlines():
-            token = line.strip()
-            token_list.append(token)
+        token_list = [line.rstrip() for line in f][:-1]
 
-    lm_model = kenlmLM(
-        token_list=token_list,
-        lm_file=args.lm_file,
-        ngram=args.ngram,
-    )
-    sos = None
-
-    # lm, _ = LMTask.build_model_from_file(
-    #     config_file="/export/c05/xkc09/asr/vctk-2mix-vq/exp/lm_train_lm_rnn_phn/config.yaml",
-    #     model_file="/export/c05/xkc09/asr/vctk-2mix-vq/exp/lm_train_lm_rnn_phn/valid.loss.ave.pth",
-    #     device="cpu",
+    # lm_model = kenlmLM(
+    #     token_list=token_list,
+    #     lm_file=args.lm_file,
+    #     ngram=args.ngram,
     # )
-    # lm_model = lm.lm
-    # sos = len(token_list) - 1
+    # sos = None
+
+    # lm_dir = "/export/c05/xkc09/asr/vctk-2mix-vq/exp/lm_train_lm_rnn_phn"
+    # lm_dir = "/export/c09/shijing2014/new/espnet-latest-xkc09/egs2/vctk_2mix/hybrid_asr1/exp/lm_train_lm_rnn_phn"
+    lm_dir = "/export/c09/shijing2014/new/espnet-latest-xkc09/egs2/vctk_2mix/hybrid_asr1/exp/lm_train_lm_adam_layers3_phn"
+    lm, _ = LMTask.build_model_from_file(
+        config_file=f"{lm_dir}/config.yaml",
+        model_file=f"{lm_dir}/valid.loss.best.pth", # "/valid.loss.ave.pth",
+        device="cpu",
+    )
+    lm_model = lm.lm
+    sos = len(token_list)
 
     for ys_hats, ground_truth in load_data():
         ground_truth_tokens = [token_list.index(x) for x in ground_truth]
@@ -88,7 +89,7 @@ def main(args):
             gt_len,
         )
 
-        for lm_weight in range(1, 4, 1):
+        for lm_weight in range(1, 5, 1):
             beam_search = BeamSearch(
                 lm_model,
                 weights=dict(asr=1.0, lm=lm_weight / 10.0),

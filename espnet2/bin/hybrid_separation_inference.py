@@ -183,7 +183,7 @@ class SeparateSpeech:
             #     device="cpu",
             # )
             # lm_model = lm.lm
-            # sos = len(token_list) - 1
+            # sos = len(token_list)
 
             self.beam_search = BeamSearch(
                 lm_model=lm_model,
@@ -639,6 +639,31 @@ def get_parser():
         default=None,
         help="If not None, this will overwrite the ref_channel defined in the "
         "separator module (for multi-channel speech processing)",
+    )
+
+    group.add_argument(
+        "--lm_weight",
+        type=float,
+        default=None,
+        help="language model weight.",
+    )
+    group.add_argument(
+        "--use_beam_search",
+        type=str2bool,
+        default=False,
+        help="Whether to use beam search",
+    )
+    group.add_argument(
+        "--kenlm_file",
+        type=str,
+        default=None,
+        help="kenlm ngram language model path.",
+    )
+    group.add_argument(
+        "--ngram",
+        type=int,
+        default=None,
+        help="n of ngram language model.",
     )
 
     return parser

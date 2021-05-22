@@ -607,6 +607,7 @@ if ! "${skip_data_prep}"; then
                 --cleaner "${cleaner}" \
                 --g2p "${g2p}" \
                 --write_vocabulary true \
+                --add_symbol "${sos_eos}:-1"
 
         else
             log "Error: not supported --token_type '${token_type}'"
@@ -645,7 +646,7 @@ if ! "${skip_train}"; then
             log "Stage 6: LM collect stats: train_set=${data_feats}/lm_train.txt, dev_set=${data_feats}/lm_dev.txt"
 
             # shellcheck disable=SC2002
-            cat ${lm_dev_text} | awk ' { if( NF != 1 ) print $0; } ' > "${data_feats}/lm_dev.txt"
+            # cat ${lm_dev_text} | awk ' { if( NF != 1 ) print $0; } ' > "${data_feats}/lm_dev.txt"
 
             _opts=
             if [ -n "${lm_config}" ]; then
@@ -803,7 +804,7 @@ if ! "${skip_train}"; then
             log "Stage 8: Calc perplexity: ${lm_test_text}"
             _opts=
             # shellcheck disable=SC2002
-            cat ${lm_test_text} | awk ' { if( NF != 1 ) print $0; } ' > "${data_feats}/lm_test.txt"
+            # cat ${lm_test_text} | awk ' { if( NF != 1 ) print $0; } ' > "${data_feats}/lm_test.txt"
             # TODO(kamo): Parallelize?
             log "Perplexity calculation started... log: '${lm_exp}/perplexity_test/lm_calc_perplexity.log'"
             # shellcheck disable=SC2086

@@ -343,12 +343,12 @@ class ASRTask(AbsTask):
         assert check_argument_types()
         if isinstance(args.token_list, str):
             with open(args.token_list, encoding="utf-8") as f:
-                token_list = [line.rstrip() for line in f]
+                token_list = [line.rstrip() for line in f][:-1]  # Remove the <sos>/<eos> symbol
 
             # Overwriting token_list to keep it as "portable".
             args.token_list = list(token_list)
         elif isinstance(args.token_list, (tuple, list)):
-            token_list = list(args.token_list)
+            token_list = list(args.token_list)[:-1]     # Remove the <sos>/<eos> symbol
         else:
             raise RuntimeError("token_list must be str or list")
         vocab_size = len(token_list)

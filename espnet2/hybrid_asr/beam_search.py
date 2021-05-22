@@ -13,6 +13,7 @@ import torch
 
 from espnet.nets.beam_search import Hypothesis
 
+
 class BeamSearch(torch.nn.Module):
     """Beamsearch for hybrid models"""
     def __init__(
@@ -96,6 +97,7 @@ class BeamSearch(torch.nn.Module):
         states = dict()
         scores['asr'], states['asr'] = asr_prob, None
         scores['lm'], states['lm'] = self.lm_model.score(hyp.yseq, hyp.states['lm'], None)
+        scores['lm'] = scores['lm'][:self.n_vocab]  # To remove the sos/eos in RNNLM
         return scores, states
 
     @staticmethod
@@ -166,7 +168,7 @@ class BeamSearch(torch.nn.Module):
     ):
         assert len(asr_outputs.shape) == 2
         seq_len, odim = asr_outputs.shape
-        assert odim == self.n_vocab
+        assert odim == self.n_vocab, f'{odim} vs. {self.n_vocab}'
 
         # Compute log likelihood
         asr_probs = torch.nn.functional.log_softmax(asr_outputs, dim=1)
