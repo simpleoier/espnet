@@ -1,0 +1,64 @@
+batch_type: folded
+batch_size: 40 # for 4 GPU
+init: xavier_uniform
+log_interval: 2
+# accum_grad: 5
+max_epoch: 100
+patience: 40
+val_scheduler_criterion:
+- valid
+- loss
+best_model_criterion:
+-   - valid
+    - acc
+    - max
+-   - valid
+    - loss
+    - min
+keep_nbest_models: 1
+
+# frontend: default
+# frontend_conf:
+    # fs: 24000
+    # n_fft: 512
+    # win_length: 512
+    # hop_length: 64
+
+frontend: conv
+frontend_conf:
+    channel: 512
+    kernel_size: 1024
+    stride: 64
+
+normalize: none
+
+encoder: dprnn
+encoder_conf:
+    num_spk: 2
+    layer: 4
+    rnn_type: lstm
+    bidirectional: True  # this is for the inter-block rnn
+    nonlinear: relu
+    unit: 256
+    segment_size: 48
+    dropout: 0.2
+    nonlinear: relu
+
+model_conf:
+    lsm_weight: 0.0
+    num_spkrs: 2
+    use_label_weights: false
+    predict_spk: true
+
+# optim: adadelta
+optim: adam
+optim_conf:
+    lr: 0.001
+    eps: 1.0e-08
+    weight_decay: 0
+scheduler: reducelronplateau
+scheduler_conf:
+    mode: min
+    factor: 0.7
+    patience: 5
+
