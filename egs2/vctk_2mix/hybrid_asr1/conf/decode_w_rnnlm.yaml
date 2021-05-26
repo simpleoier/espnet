@@ -1,0 +1,4 @@
+lm_weight: 0.15
+use_beam_search: true
+ngram: 6
+beam_size: 5

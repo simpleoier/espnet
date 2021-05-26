@@ -24,7 +24,7 @@ from espnet.utils.cli_utils import get_commandline_args
 from espnet2.fileio.datadir_writer import DatadirWriter
 from espnet2.fileio.sound_scp import SoundScpWriter
 from espnet2.hybrid_asr.beam_search import BeamSearch
-from espnet2.hybrid_asr.loss_weights import idx_to_vq
+from espnet2.hybrid_asr.loss_weights import idx_to_vq, spk_to_gender, spk_to_netidx, gold_spk
 from espnet2.lm.ken_lm import kenlmLM
 # from espnet2.tasks.enh import
 from espnet2.tasks.hybrid_asr import ASRTask 
@@ -40,13 +40,23 @@ from espnet2.utils.types import str_or_none
 
 EPS = torch.finfo(torch.get_default_dtype()).eps
 
-def vq_decode(utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/"):
+def vq_decode(utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/", use_gold_spk=False):
     """Run decoding process."""
     vq_seq = torch.LongTensor([idx_to_vq[idx] for idx in idx_seq]).to(idx_seq.device)
     assert vq_seq.shape == idx_seq.shape
     checkpoint=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/checkpoint-5000000steps.pkl"
     config=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/config.yml" 
     verbose=1
+
+    if use_gold_spk: 
+        dic = spk_to_netidx
+        spk_str = list(dic.keys())[list(dic.values()).index(int(spk_idx))] # find the spk
+        print("ori spk idx:", spk_str, spk_idx)
+        spk_gentle = spk_to_gender[spk_str]
+        spk_gold = gold_spk[spk_gentle]
+        spk_gold_idx = dic[spk_gold]
+        print("ori spk idx:", spk_gold, spk_gold_idx)
+        spk_idx = spk_gold_idx
 
     # set logger
     if verbose > 1:
@@ -149,6 +159,7 @@ class SeparateSpeech:
         use_beam_search: bool = False,
         kenlm_file: str = None,
         ngram: int = None,
+        use_gold_spk: bool = False, 
     ):
         assert check_argument_types()
 
@@ -172,19 +183,20 @@ class SeparateSpeech:
 
         self.use_beam_search = use_beam_search
         if use_beam_search:
-            lm_model = kenlmLM(
-                token_list=token_list,
-                lm_file=kenlm_file,
-                ngram=ngram,
-            )
-            sos = None
-            # lm, _ = LMTask.build_model_from_file(
-            #     config_file="/export/c05/xkc09/asr/vctk-2mix-vq/exp/lm_train_lm_rnn_phn/config.yaml",
-            #     model_file="/export/c05/xkc09/asr/vctk-2mix-vq/exp/lm_train_lm_rnn_phn/valid.loss.ave.pth",
-            #     device="cpu",
+            # lm_model = kenlmLM(
+                # token_list=token_list,
+                # lm_file=kenlm_file,
+                # ngram=ngram,
             # )
-            # lm_model = lm.lm
-            # sos = len(token_list)
+            # sos = None
+
+            lm, _ = LMTask.build_model_from_file(
+                model_file="/data3/Espnet_xuankai/espnet/egs2/vctk_2mix/hybrid_asr1/exp/lm4sj/valid.loss.ave.pth",
+                config_file="/data3/Espnet_xuankai/espnet/egs2/vctk_2mix/hybrid_asr1/exp/lm4sj/config.yaml",
+                device="cuda",
+            )
+            lm_model = lm.lm
+            sos = len(token_list)
 
             self.beam_search = BeamSearch(
                 lm_model=lm_model,
@@ -337,18 +349,20 @@ class SeparateSpeech:
                 ys_hats = [
                     self.hybrid_model.ce_lo(enc_out) for enc_out in encoder_out
                 ] # n_spk * (bs, lens, proj)
+                # print("ys_hats:", ys_hats[0].shape)
                 if self.use_beam_search:
                     vq_seqs = []  # nbest vq_hyp seqs.
                     for _, ys in enumerate(ys_hats):
-                        vq_seqs.append(self.beam_search(ys))
+                        bm_result=self.beam_search(ys)
+                        assert bm_result.size(1)==ys.size(1)
+                        # print("beam_results",bm_result, bm_result.shape)
+                        vq_seqs.append(bm_result)
                     # print("vq_seqs:", vq_seqs[0])
                 else:
                     vq_seqs = [ys.max(-1)[1] for ys in ys_hats] # n_spk * (bs,lens)
                 spk_idx_list = [self.hybrid_model.ce_spk(enc_out).argmax(-1) for enc_out in encoder_out_spk] # n_spk*(bs,)
-                print("vq_seqs:", vq_seqs )
+                # print("vq_seqs:", vq_seqs )
                 return vq_seqs, spk_idx_list
-
-
 
         assert len(waves) == self.num_spk, len(waves) == self.num_spk
         assert len(waves[0]) == batch_size, (len(waves[0]), batch_size)
@@ -433,6 +447,7 @@ def inference(
     use_beam_search: bool = False,
     kenlm_file: str = None,
     ngram: int = None,
+    use_gold_spk: bool = False, 
 ):
     assert check_argument_types()
     if batch_size > 1:
@@ -453,6 +468,7 @@ def inference(
     # 1. Set random-seed
     set_all_random_seed(seed)
 
+    print("gold_spk:",use_gold_spk)
     # 2. Build separate_speech
     separate_speech = SeparateSpeech(
         hybrid_train_config=hybrid_train_config,
@@ -471,6 +487,7 @@ def inference(
         use_beam_search=use_beam_search,
         kenlm_file=kenlm_file,
         ngram=ngram,
+        use_gold_spk=use_gold_spk,
     )
 
     # 3. Build data-iterator
@@ -506,6 +523,7 @@ def inference(
         batch = {k: v for k, v in batch.items() if not k.endswith("_lengths")}
 
         asr_seqs, spk_idx_list= separate_speech(**batch)
+        print("spk_idx_list")
 
         # print('uttid:',keys[0], ys_hats[0].shape)
         # np.save(open('/tmp/spk1_vq_hats_{}.npy'.format(keys[0]),'wb'), ys_hats[0].data.cpu().numpy())
@@ -523,7 +541,7 @@ def inference(
                     # writers[spk][keys[b]] = fs, w[b]
                     asr_writer["text"+str(spk)][keys[b]] = " ".join(map(str, text.data.cpu().numpy()))
                 
-                    wave = vq_decode(keys[b], text, spk_idx)
+                    wave = vq_decode(keys[b], text, spk_idx, use_gold_spk=use_gold_spk)
                     writers[spk][keys[b]] = 24000, wave
         else: # no-prediction of spks
             for spk, text in enumerate(asr_seqs):
@@ -670,6 +688,12 @@ def get_parser():
         "--ngram",
         type=int,
         default=0,
+        help="n of ngram language model.",
+    )
+    group.add_argument(
+        "--use_gold_spk",
+        type=str2bool,
+        default=False,
         help="n of ngram language model.",
     )
 
