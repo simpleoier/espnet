@@ -68,7 +68,7 @@ lm_tag=           # Suffix to the result dir for language model training.
 lm_exp=           # Specify the direcotry path for LM experiment.
                   # If this option is specified, lm_tag is ignored.
 lm_stats_dir=     # Specify the direcotry path for LM statistics.
-lm_config=        # Config for language model training.
+lm_config=""        # Config for language model training.
 lm_infer_config=""        # Config for language model training.
 lm_args=          # Arguments for language model training, e.g., "--max_epoch 10".
                   # Note that it will overwrite args in lm config.
@@ -76,6 +76,7 @@ use_word_lm=false # Whether to use word language model.
 num_splits_lm=1   # Number of splitting for lm corpus
 # shellcheck disable=SC2034
 word_vocab_size=10000 # Size of word vocabulary.
+use_gold_spk=false
 
 # Recognition model related
 asr_tag=       # Suffix to the result dir for asr model training.
@@ -1033,9 +1034,9 @@ if ! "${skip_eval}"; then
         if [ -n "${lm_infer_config}" ]; then
             # To generate the config file: e.g.
             #   % python3 -m espnet2.bin.enh_train --print_config --optim adam
-            _opts+="--config ${lm_infer_config} "
+            _opts="--config ${lm_infer_config} "
         else
-            _opts+=""
+            _opts=""
         fi
 
         for dset in "${valid_set}" ${test_sets}; do
@@ -1070,6 +1071,7 @@ if ! "${skip_eval}"; then
                     --hybrid_train_config "${asr_exp}"/config.yaml \
                     --hybrid_model_file "${asr_exp}"/"${inference_asr_model}" \
                     --output_dir "${_logdir}"/output.JOB \
+                    --use_gold_spk "${use_gold_spk}" \
                     ${_opts} ${inference_args}
 
 
@@ -1103,6 +1105,7 @@ if ! "${skip_eval}"; then
         _cmd=${decode_cmd}
 
         for dset in "${valid_set}" ${test_sets}; do
+        # for dset in ${test_sets} ; do
             _data="${data_feats}/${dset}"
             _inf_dir="${asr_exp}/enhanced_${dset}"
             _dir="${asr_exp}/enhanced_${dset}/scoring"
@@ -1226,7 +1229,7 @@ if ! "${skip_eval}"; then
         mkdir -p "${asr_exp}/${inference_tag}"; echo "${run_args} --stage 13 \"\$@\"; exit \$?" > "${asr_exp}/${inference_tag}/run.sh"; chmod +x "${asr_exp}/${inference_tag}/run.sh"
 
         for dset in ${valid_set} ${test_sets}; do
-        # for dset in ${test_sets}; do
+        # for dset in ${valid_set}; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/recognition/decode_${dset}"
 
@@ -1285,6 +1288,8 @@ if ! "${skip_eval}"; then
             log "Error: Not implemented for token_type=phn"
             exit 1
         fi
+
+        # nlsyms_txt="data/nlsyms.txt"
 
         for dset in ${valid_set} ${test_sets}; do
         # for dset in ${test_sets}; do
