@@ -40,7 +40,7 @@ lm_infer_conf=decoee_w_kenlm
     --local_data_opts "--sample_rate ${sample_rate} --min_or_max ${min_or_max}" \
     --asr_config conf/tuning/${asr_conf}.yaml \
     --lm_config conf/${lm_conf}.yaml \
-    --lm_infer_config conf/${lm_conf}.yaml \
+    --lm_infer_config conf/${lm_infer_conf}.yaml \
     --token_type phn \
     --lm_train_text "dump/raw/lm_train.txt" \
     --lm_dev_text "dump/raw/lm_dev.txt" \

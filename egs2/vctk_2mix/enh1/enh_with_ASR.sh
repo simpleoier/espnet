@@ -908,6 +908,7 @@ if ! "${skip_eval}"; then
             exit 1
         fi
 
+        nlsyms_txt="data/nlsyms.txt"
         for dset in ${valid_set} ${test_sets}; do
         # for dset in ${test_sets}; do
             _data="${data_feats}/${dset}"
