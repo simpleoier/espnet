@@ -120,13 +120,14 @@ spk_to_gender={
     "s5":"F", 
 }
 
-def random_sample(idx,spk_list,audios,num_spk,snr_range=5.0):
+def random_sample(idx,spk_list,audios,tag, num_spk,snr_range=5.0, cv_utts_number=15):
     """ Generate one line of the mixtures' list.
 
     Args:
         idx (int): index in all the mixtures
         spk_list (list): speakers list
         audios (dict): dict with speakers
+        tag (str): tr/cv/tt 
         num_spk (int): num of speakers in one mixture.
         snr_range (float, optional): [description]. Defaults to 5.0.
     """
@@ -136,7 +137,16 @@ def random_sample(idx,spk_list,audios,num_spk,snr_range=5.0):
     snr_pos = round(random.random() * snr_range/2.0, 5) 
     snr_neg = -1 * snr_pos
     for jdx, spk in enumerate(spks):
-        line += random.sample(audios[spk],1)[0]
+        if tag == "tr":
+            aim_audios = audios[spk][:-cv_utts_number]
+        elif tag == "cv":
+            aim_audios = audios[spk][-cv_utts_number:]
+        elif tag == "tt":
+            aim_audios = audios[spk]
+        else: 
+            raise KeyError
+
+        line += random.sample(aim_audios,1)[0]
         line += " "
         if jdx == 0:
             line += str(snr_pos)
@@ -155,11 +165,6 @@ def prepare_data(args):
     assert len(spk_list)==109, "VCTK should get 109 speakers in total, but got {} now".format(len(spk_list))
     spk_list.remove("p315") # VCTK lost the transcription for Speaker P315, just drop it from now on.
 
-    audios = {
-        spk: [str(sample.relative_to(audiodir)) for sample in audiodir.rglob(spk + "/*." + args.audio_format)] 
-        for spk in spk_list 
-    }
-
     # Shuffle many times to the spk_list
     random.shuffle(spk_list)
     random.shuffle(spk_list)
@@ -171,6 +176,15 @@ def prepare_data(args):
     print("spk_list_tr_gender: M:{}, F:{}".format(spk_list_tr_gen.count('M'),spk_list_tr_gen.count('F')))
     print("spk_list_tt_gender: M:{}, F:{}".format(spk_list_tt_gen.count('M'),spk_list_tt_gen.count('F')))
     input("Input to continue......")
+
+    audios = {
+        spk: [str(sample.relative_to(audiodir)) for sample in audiodir.rglob(spk + "/*." + args.audio_format)]
+        for spk in spk_list
+    }
+
+    for spk in spk_list:
+        random.shuffle(audios[spk])
+
 
     with Path(outfile/"spk_list_tr").open("w") as out:
         out.write("\n".join(spk_list_tr))
@@ -189,14 +203,14 @@ def prepare_data(args):
                         aim_list = spk_list_tt
                     else: # for close condition
                         aim_list = spk_list_tr
-                    out.write(random_sample(idx_mixture,aim_list,audios,num_spk)+"\n")
+                    out.write(random_sample(idx_mixture,aim_list,audios,mode,num_spk)+"\n")
 
                 # whether to use trainset augment
                 if mode == "tr" and args.trainset_augment_samples>0:
                     aimfile= "vctk_mix_{}_spk_{}_aug{}.txt".format(num_spk,mode,args.trainset_augment_samples)
                     with Path(outfile/aimfile).open("w") as out:
                         for idx_mixture in tqdm(range(getattr(args,"trainset_augment_samples"))):
-                            out.write(random_sample(idx_mixture,aim_list,audios,num_spk)+"\n")
+                            out.write(random_sample(idx_mixture,aim_list,audios,mode,num_spk)+"\n")
 
 
     print("Generation of mixture list Finished.")
