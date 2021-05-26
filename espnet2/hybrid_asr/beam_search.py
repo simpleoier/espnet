@@ -10,6 +10,7 @@ from typing import Tuple
 from typing import Union
 
 import torch
+from tqdm import tqdm
 
 from espnet.nets.beam_search import Hypothesis
 
@@ -96,6 +97,8 @@ class BeamSearch(torch.nn.Module):
         scores = dict()
         states = dict()
         scores['asr'], states['asr'] = asr_prob, None
+        # print('hypo:',hyp)
+        # print(self.lm_model.score)
         scores['lm'], states['lm'] = self.lm_model.score(hyp.yseq, hyp.states['lm'], None)
         scores['lm'] = scores['lm'][:self.n_vocab]  # To remove the sos/eos in RNNLM
         return scores, states
@@ -137,10 +140,16 @@ class BeamSearch(torch.nn.Module):
         for hyp in running_hyps:
             # scoring
             weighted_scores = torch.zeros(self.n_vocab, dtype=asr_probs.dtype, device=asr_probs.device)
+            # print(weighted_scores.device)
             scores, states = self.score_full(hyp, asr_probs)
+            # print(self.weights)
+            # print(scores['asr'])
+            # print(scores['lm'])
+            # weighted_scores = torch.Tensor(self.weights['asr'], device=asr_probs.device) * scores['asr'].to(asr_probs.device) + torch.Tensor(self.weights['lm'], device=asr_probs.device) * scores['lm'].to(asr_probs.device)
             weighted_scores = self.weights['asr'] * scores['asr'] + self.weights['lm'] * scores['lm']
             # add previous hyp score
             weighted_scores += hyp.score
+            # print('weight_scores:',weighted_scores)
 
             # update hyps
             for j, part_j in zip(*self.beam(weighted_scores)):
@@ -172,15 +181,18 @@ class BeamSearch(torch.nn.Module):
         assert odim == self.n_vocab, f'{odim} vs. {self.n_vocab}'
 
         # Compute log likelihood
+        print("asr_outputs:", asr_outputs.device)
         asr_probs = torch.nn.functional.log_softmax(asr_outputs, dim=1)
+        print("asr_probs:", asr_probs.device)
 
         running_hyps = self.init_hyp(asr_probs)
         for i in range(seq_len):
             # pdb.set_trace()
-            logging.debug("position " + str(i))
+            print("seq_len_idx:",i, seq_len)
+            # logging.debug("position " + str(i))
             best_hyps = self.search(running_hyps, asr_probs[i])
             running_hyps = best_hyps
         
         nbest_hyps = sorted(best_hyps, key=lambda x: x.score, reverse=True)
         # print('nbest_hyps:', nbest_hyps)
-        return nbest_hyps[0].yseq.unsqueeze(0)
+        return nbest_hyps[0].yseq.unsqueeze(0)[:,1:]
