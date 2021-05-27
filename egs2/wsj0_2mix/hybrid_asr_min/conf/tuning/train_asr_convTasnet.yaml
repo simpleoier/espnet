@@ -1,0 +1,52 @@
+batch_type: folded
+batch_size: 4 # for 4 GPU
+init: xavier_uniform
+log_interval: 2
+accum_grad: 10
+max_epoch: 50
+patience: 4
+val_scheduler_criterion:
+- valid
+- loss
+best_model_criterion:
+-   - valid
+    - acc
+    - max
+keep_nbest_models: 1
+
+frontend: default
+frontend_conf:
+    fs: 24000
+    n_fft: 512
+    win_length: 512
+    hop_length: 64
+
+encoder: tcn
+encoder_conf:
+    num_spk: 2
+    layer: 8
+    stack: 4
+    bottleneck_dim: 256
+    hidden_dim: 512
+    kernel: 3
+    causal: False
+    norm_type: "gLN"
+    nonlinear: relu
+
+model_conf:
+    lsm_weight: 0.0
+    num_spkrs: 2
+    use_label_weights: false
+
+# optim: adadelta
+optim: adam
+optim_conf:
+    lr: 0.001
+    eps: 1.0e-08
+    weight_decay: 0
+scheduler: reducelronplateau
+scheduler_conf:
+    mode: min
+    factor: 0.5
+    patience: 1
+
