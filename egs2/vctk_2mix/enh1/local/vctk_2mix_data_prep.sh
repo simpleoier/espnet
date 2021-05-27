@@ -72,8 +72,7 @@ fi
 for x in tr cv tt; do
   target_folder=$(eval echo \$$x)
 
-  awk '{split($1, lst, "_"); spk=lst[1]"_"lst[4]; print($1, spk)}' ${data}/${target_folder}/wav.scp | sort > ${data}/${target_folder}/utt2spk
-  awk '{split($1, lst, "_"); spk=lst[1]; utt=lst[1]"_"lst[2]; print(spk"/"utt".txt")}' ${data}/${target_folder}/wav.scp > ${data}/${target_folder}/utt_spk1
+  awk '{split($1, lst, "_"); spk=lst[1]; utt=lst[1]"_"lst[3]; print(spk"/"utt".txt")}' ${data}/${target_folder}/wav.scp > ${data}/${target_folder}/utt_spk1
   awk -v dir=${vctk_full_wav} '{printf("%s/txt/%s\n", dir, $1)}' ${data}/${target_folder}/utt_spk1 > ${data}/${target_folder}/tmp_spk1_0
   cat ${data}/${target_folder}/tmp_spk1_0 | while read line 
   do
@@ -81,7 +80,7 @@ for x in tr cv tt; do
       [ `tail -n1 ${line} | wc -l` -eq 1 ] || echo ""  # add newline if there is no "\n" in text
   done > ${data}/${target_folder}/tmp_spk1_1
   
-  awk '{split($1, lst, "_"); spk=lst[4]; utt=lst[4]"_"lst[5]; print(spk"/"utt".txt")}' ${data}/${target_folder}/wav.scp  > ${data}/${target_folder}/utt_spk2
+  awk '{split($1, lst, "_"); spk=lst[2]; utt=lst[2]"_"lst[5]; print(spk"/"utt".txt")}' ${data}/${target_folder}/wav.scp  > ${data}/${target_folder}/utt_spk2
   awk -v dir=${vctk_full_wav} '{printf("%s/txt/%s\n", dir, $1)}' ${data}/${target_folder}/utt_spk2 > ${data}/${target_folder}/tmp_spk2_0
   cat ${data}/${target_folder}/tmp_spk2_0 | while read line 
   do
