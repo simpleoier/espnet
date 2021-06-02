@@ -6,6 +6,7 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
+from typing import Union
 
 import numpy as np
 import torch
@@ -48,6 +49,7 @@ from espnet2.asr.preencoder.sinc import LightweightSincConvs
 from espnet2.asr.specaug.abs_specaug import AbsSpecAug
 from espnet2.asr.specaug.specaug import SpecAug
 from espnet2.hybrid_asr.espnet_model import ESPnetHybridASRModel
+from espnet2.hybrid_asr.espnet_model_mix import ESPnetHybridMixASRModel
 from espnet2.layers.abs_normalize import AbsNormalize
 from espnet2.layers.global_mvn import GlobalMVN
 from espnet2.layers.utterance_mvn import UtteranceMVN
@@ -276,6 +278,12 @@ class ASRTask(AbsTask):
             default="13_15",
             help="The range of noise decibel level.",
         )
+        parser.add_argument(
+            "--num_spkr",
+            type=str_or_none,
+            default=2,
+            help="Number of speakers (default: 2).",
+        )
 
         for class_choices in cls.class_choices_list:
             # Append --<name> and --<name>_conf.
@@ -307,7 +315,7 @@ class ASRTask(AbsTask):
                 non_linguistic_symbols=args.non_linguistic_symbols,
                 text_cleaner=args.cleaner,
                 g2p_type=args.g2p,
-                text_name=["phn_ref1", "phn_ref2"],
+                text_name=["phn_ref"],
             )
         else:
             retval = None
@@ -319,7 +327,8 @@ class ASRTask(AbsTask):
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
         if not inference:
-            retval = ("speech_mix", "phn_ref1", "phn_ref2")
+            # retval = ("speech_mix", "phn_ref1", "phn_ref2")
+            retval = ("speech_mix", "phn_ref")
         else:
             # Recognition mode
             retval = ("speech_mix",)
@@ -339,7 +348,7 @@ class ASRTask(AbsTask):
         return retval
 
     @classmethod
-    def build_model(cls, args: argparse.Namespace) -> ESPnetHybridASRModel:
+    def build_model(cls, args: argparse.Namespace) -> Union[ESPnetHybridASRModel, ESPnetHybridMixASRModel]:
         assert check_argument_types()
         if isinstance(args.token_list, str):
             with open(args.token_list, encoding="utf-8") as f:
@@ -409,18 +418,32 @@ class ASRTask(AbsTask):
         rnnt_decoder = None
 
         # 7. Build model
-        model = ESPnetHybridASRModel(
-            vocab_size=vocab_size,
-            frontend=frontend,
-            specaug=specaug,
-            normalize=normalize,
-            preencoder=preencoder,
-            encoder=encoder,
-            decoder=decoder,
-            rnnt_decoder=rnnt_decoder,
-            token_list=token_list,
-            **args.model_conf,
-        )
+        if args.num_spkr == 1:
+            model = ESPnetHybridASRModel(
+                vocab_size=vocab_size,
+                frontend=frontend,
+                specaug=specaug,
+                normalize=normalize,
+                preencoder=preencoder,
+                encoder=encoder,
+                decoder=decoder,
+                rnnt_decoder=rnnt_decoder,
+                token_list=token_list,
+                **args.model_conf,
+            )
+        else:
+            model = ESPnetHybridMixASRModel(
+                vocab_size=vocab_size,
+                frontend=frontend,
+                specaug=specaug,
+                normalize=normalize,
+                preencoder=preencoder,
+                encoder=encoder,
+                decoder=decoder,
+                rnnt_decoder=rnnt_decoder,
+                token_list=token_list,
+                **args.model_conf,
+            )
 
         # FIXME(kamo): Should be done in model?
         # 8. Initialize

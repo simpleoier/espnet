@@ -69,7 +69,6 @@ lm_exp=           # Specify the direcotry path for LM experiment.
                   # If this option is specified, lm_tag is ignored.
 lm_stats_dir=     # Specify the direcotry path for LM statistics.
 lm_config=        # Config for language model training.
-lm_infer_config=""        # Config for language model training.
 lm_args=          # Arguments for language model training, e.g., "--max_epoch 10".
                   # Note that it will overwrite args in lm config.
 use_word_lm=false # Whether to use word language model.
@@ -595,7 +594,7 @@ if ! "${skip_data_prep}"; then
                 --add_symbol "${sos_eos}:-1"
 
         elif [ "${token_type}" = phn ]; then
-            log "Stage 5: Generate phoneme level token_list from ${data_feats}/lm_tokenize.txt"
+            log "Stage 5: Generate phoneme level token_list from ${lm_train_text}"
 
             _opts="--non_linguistic_symbols ${nlsyms_txt}"
 
@@ -847,7 +846,7 @@ if ! "${skip_train}"; then
                 # "sound" supports "wav", "flac", etc.
                 _type=sound
             fi
-            _opts+="--frontend_conf fs=${fs} "
+            # _opts+="--frontend_conf fs=${fs} "
         else
             _scp=feats.scp
             _type=kaldi_ark
@@ -875,6 +874,7 @@ if ! "${skip_train}"; then
         for n in $(seq "${_nj}"); do
             split_scps+=" ${_logdir}/valid.${n}.scp"
         done
+        false && {
         # shellcheck disable=SC2086
         utils/split_scp.pl "${key_file}" ${split_scps}
 
@@ -890,10 +890,8 @@ if ! "${skip_train}"; then
         _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/wav.scp,speech_mix,sound "
         _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
         _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
-        for spk in $(seq "${spk_num}"); do
-            _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/vq_spk${spk},phn_ref${spk},text "
-            _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/vq_spk${spk},phn_ref${spk},text "
-        done
+        _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/vq_text,phn_ref,text "
+        _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/vq_text,phn_ref,text "
 
         # NOTE: --*_shape_file doesn't require length information if --batch_type=unsorted,
         #       but it's used only for deciding the sample ids.
@@ -915,6 +913,7 @@ if ! "${skip_train}"; then
                 --valid_shape_file "${_logdir}/valid.JOB.scp" \
                 --output_dir "${_logdir}/stats.JOB" \
                 ${_opts} ${asr_args} || { cat "${_logdir}"/stats.1.log; exit 1; }
+        }
 
         # 4. Aggregate shape files
         _opts=
@@ -964,13 +963,11 @@ if ! "${skip_train}"; then
         _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
         _valid_shape_param="--valid_shape_file ${asr_stats_dir}/valid/speech_mix_shape "
         _fold_length_param="--fold_length ${_fold_length} "
-        for spk in $(seq "${spk_num}"); do
-            _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/vq_spk${spk},phn_ref${spk},text "
-            _train_shape_param+="--train_shape_file ${asr_stats_dir}/train/phn_ref${spk}_shape "
-            _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/vq_spk${spk},phn_ref${spk},text "
-            _valid_shape_param+="--valid_shape_file ${asr_stats_dir}/valid/phn_ref${spk}_shape "
-            _fold_length_param+="--fold_length ${_fold_length} "
-        done
+        _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/vq_text,phn_ref,text "
+        _train_shape_param+="--train_shape_file ${asr_stats_dir}/train/phn_ref_shape "
+        _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/vq_text,phn_ref,text "
+        _valid_shape_param+="--valid_shape_file ${asr_stats_dir}/valid/phn_ref_shape "
+        _fold_length_param+="--fold_length ${_fold_length} "
 
         log "Generate '${asr_exp}/run.sh'. You can resume the process from stage 10 using this script"
         mkdir -p "${asr_exp}"; echo "${run_args} --stage 10 \"\$@\"; exit \$?" > "${asr_exp}/run.sh"; chmod +x "${asr_exp}/run.sh"
@@ -1029,14 +1026,7 @@ if ! "${skip_eval}"; then
 
         log "Generate '${asr_exp}/run_enhance.sh'. You can resume the process from stage 7 using this script"
         mkdir -p "${asr_exp}"; echo "${run_args} --stage 7 \"\$@\"; exit \$?" > "${asr_exp}/run_enhance.sh"; chmod +x "${asr_exp}/run_enhance.sh"
-        # _opts=
-        if [ -n "${lm_infer_config}" ]; then
-            # To generate the config file: e.g.
-            #   % python3 -m espnet2.bin.enh_train --print_config --optim adam
-            _opts+="--config ${lm_infer_config} "
-        else
-            _opts+=""
-        fi
+        _opts=
 
         for dset in "${valid_set}" ${test_sets}; do
         # for dset in ${test_sets} ; do

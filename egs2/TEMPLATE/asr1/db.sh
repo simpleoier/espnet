@@ -83,13 +83,13 @@ if [[ "$(hostname -d)" == clsp.jhu.edu ]]; then
     DIRHA_ENGLISH_PHDEV=
     DIRHA_WSJ=
     DIRHA_WSJ_PROCESSED="${PWD}/data/local/dirha_wsj_processed"  # Output file path
-    WSJ0=
-    WSJ1=
+    WSJ0=/export/corpora5/LDC/LDC93S6B
+    WSJ1=/export/corpora5/LDC/LDC94S13B
     WSJCAM0=/export/corpora3/LDC/LDC95S24/wsjcam0
     REVERB=/export/corpora5/REVERB_2014/REVERB
     REVERB_OUT="${PWD}/REVERB"  # Output file path
     CHIME3=
-    CHIME4=
+    CHIME4=/export/c09/shijing2014/new/espnet-latest-xkc09/egs2/chime4/asr1/chime4_data/CHiME4/CHiME3
     CSJDATATOP=/export/corpora5/CSJ/USB
     CSJVER=usb  ## Set your CSJ format (dvd or usb).
                 ## Usage    :

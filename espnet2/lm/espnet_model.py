@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from typeguard import check_argument_types
 
 from espnet.nets.pytorch_backend.nets_utils import make_pad_mask
+from espnet.nets.pytorch_backend.nets_utils import th_accuracy
 from espnet2.lm.abs_model import AbsLM
 from espnet2.torch_utils.device_funcs import force_gatherable
 from espnet2.train.abs_espnet_model import AbsESPnetModel
@@ -48,15 +49,22 @@ class ESPnetLanguageModel(AbsESPnetModel):
         nll.masked_fill_(make_pad_mask(x_lengths).to(nll.device).view(-1), 0.0)
         # nll: (BxL,) -> (B, L)
         nll = nll.view(batch_size, -1)
-        return nll, x_lengths
+
+        # 4. Calc acc
+        acc = th_accuracy(
+            y.view(-1, y.shape[-1]),
+            t,
+            ignore_label=self.ignore_id,
+        )
+        return nll, x_lengths, acc
 
     def forward(
         self, text: torch.Tensor, text_lengths: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], torch.Tensor]:
-        nll, y_lengths = self.nll(text, text_lengths)
+        nll, y_lengths, acc = self.nll(text, text_lengths)
         ntokens = y_lengths.sum()
         loss = nll.sum() / ntokens
-        stats = dict(loss=loss.detach())
+        stats = dict(loss=loss.detach(), acc=acc)
 
         # force_gatherable: to-device and to-tensor if scalar for DataParallel
         loss, stats, weight = force_gatherable((loss, stats, ntokens), loss.device)

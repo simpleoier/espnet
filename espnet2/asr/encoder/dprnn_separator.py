@@ -25,6 +25,7 @@ class DPRNNSeparator(AbsEncoder):
         segment_size: int = 20,
         dropout: float = 0.0,
         pooling: str = "max",
+        *args,
     ):
         """Dual-Path RNN (DPRNN) Separator
 
