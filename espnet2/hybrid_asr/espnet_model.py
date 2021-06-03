@@ -30,7 +30,7 @@ from espnet2.asr.frontend.abs_frontend import AbsFrontend
 from espnet2.asr.preencoder.abs_preencoder import AbsPreEncoder
 from espnet2.asr.specaug.abs_specaug import AbsSpecAug
 from espnet2.hybrid_asr.loss_weights import idx_to_vq_max as idx_to_vq
-from espnet2.hybrid_asr.loss_weights import normedWeights
+# from espnet2.hybrid_asr.loss_weights import normedWeights
 from espnet2.layers.abs_normalize import AbsNormalize
 from espnet2.torch_utils.device_funcs import force_gatherable
 from espnet2.train.abs_espnet_model import AbsESPnetModel
@@ -88,7 +88,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         sym_blank: str = "<blank>",
         num_spkrs: int = 2,
         chunk_size: int = -1,
-        use_label_weights: bool = True,
+        use_label_weights: bool = False,
         only_longer_ref: bool = False,
         predict_spk: bool = False,
     ):
@@ -620,9 +620,11 @@ class ESPnetHybridASRModel(AbsESPnetModel):
     ):
         if isinstance(encoder_out, list):
             if encoder_out[0].shape[1] < phn_ref1.shape[1]:
+                # logging.warning("Encoder_out[0].shape, phn_ref_shape:", encoder_out[0].shape[1], phn_ref1.shape[1])
                 phn_ref1 = phn_ref1[:, :encoder_out[0].shape[1]].contiguous()
                 phn_ref2 = phn_ref2[:, :encoder_out[0].shape[1]].contiguous()
             elif encoder_out[0].shape[1] > phn_ref1.shape[1]:
+                # logging.warning("Encoder_out[0].shape, phn_ref_shape:", encoder_out[0].shape[1], phn_ref1.shape[1])
                 encoder_out[0] = encoder_out[0][:, :phn_ref1.shape[1]].contiguous()
                 encoder_out[1] = encoder_out[1][:, :phn_ref1.shape[1]].contiguous()
 

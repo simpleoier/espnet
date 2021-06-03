@@ -15,7 +15,8 @@ test_sets="tt_${min_or_max}_${sample_rate} "
 
 stage=10; stop_stage=1000
 #asr_conf=train_asr_rnn_1;
-asr_conf=train_asr_mixrnn_2;
+# asr_conf=train_asr_mixrnn_2;
+asr_conf=train_asr_conv_dprnn;
 
 ./hybrid_asr_min.sh \
     --stage ${stage} --stop_stage ${stop_stage} \
@@ -23,7 +24,8 @@ asr_conf=train_asr_mixrnn_2;
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \
     --fs "${sample_rate}" \
-    --ngpu 1 \
+    --feats_normalize false \
+    --ngpu 4 \
     --local_data_opts "--sample_rate ${sample_rate} --min_or_max ${min_or_max}" \
     --asr_config conf/tuning/${asr_conf}.yaml \
     --token_type phn \

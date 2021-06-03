@@ -886,8 +886,8 @@ if ! "${skip_train}"; then
         # prepare train and valid data parameters
         _train_data_param="--train_data_path_and_name_and_type ${_asr_train_dir}/wav.scp,speech_mix,sound "
         _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/wav.scp,speech_mix,sound "
-        _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
-        _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
+        # _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
+        # _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
         for spk in $(seq "${spk_num}"); do
             _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/vq_spk${spk},phn_ref${spk},text "
             _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/vq_spk${spk},phn_ref${spk},text "
@@ -957,9 +957,9 @@ if ! "${skip_train}"; then
         # prepare train and valid data parameters
         _train_data_param="--train_data_path_and_name_and_type ${_asr_train_dir}/wav.scp,speech_mix,sound "
         _train_shape_param="--train_shape_file ${asr_stats_dir}/train/speech_mix_shape "
-        _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
+        # _train_data_param+="--train_data_path_and_name_and_type ${_asr_train_dir}/utt2spk,speakers_str,text "
         _valid_data_param="--valid_data_path_and_name_and_type ${_asr_valid_dir}/wav.scp,speech_mix,sound "
-        _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
+        # _valid_data_param+="--valid_data_path_and_name_and_type ${_asr_valid_dir}/utt2spk,speakers_str,text "
         _valid_shape_param="--valid_shape_file ${asr_stats_dir}/valid/speech_mix_shape "
         _fold_length_param="--fold_length ${_fold_length} "
         for spk in $(seq "${spk_num}"); do
@@ -1029,8 +1029,8 @@ if ! "${skip_eval}"; then
         mkdir -p "${asr_exp}"; echo "${run_args} --stage 7 \"\$@\"; exit \$?" > "${asr_exp}/run_enhance.sh"; chmod +x "${asr_exp}/run_enhance.sh"
         _opts=
 
-        # for dset in "${valid_set}" ${test_sets}; do
-        for dset in ${test_sets}; do
+        for dset in "${valid_set}" ${test_sets}; do
+        # for dset in ${test_sets}; do
             _data="${data_feats}/${dset}"
             _dir="${asr_exp}/enhanced_${dset}"
             _logdir="${_dir}/logdir"
@@ -1056,6 +1056,7 @@ if ! "${skip_eval}"; then
                 ${python} -m espnet2.bin.hybrid_separation_inference\
                     --ngpu "${_ngpu}" \
                     --fs "${fs}" \
+                    --tokens_list "${token_list}" \
                     --data_path_and_name_and_type "${_data}/${_scp},speech_mix,${_type}" \
                     --key_file "${_logdir}"/keys.JOB.scp \
                     --hybrid_train_config "${asr_exp}"/config.yaml \
