@@ -24,7 +24,7 @@ from espnet.utils.cli_utils import get_commandline_args
 from espnet2.fileio.datadir_writer import DatadirWriter
 from espnet2.fileio.sound_scp import SoundScpWriter
 from espnet2.hybrid_asr.beam_search import BeamSearch
-from espnet2.hybrid_asr.loss_weights import idx_to_vq, spk_to_gender, spk_to_netidx, gold_spk
+# from espnet2.hybrid_asr.loss_weights import idx_to_vq, spk_to_gender, spk_to_netidx, gold_spk
 from espnet2.lm.ken_lm import kenlmLM
 # from espnet2.tasks.enh import
 from espnet2.tasks.hybrid_asr import ASRTask 
@@ -40,12 +40,17 @@ from espnet2.utils.types import str_or_none
 
 EPS = torch.finfo(torch.get_default_dtype()).eps
 
-def vq_decode(utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/", use_gold_spk=False):
+
+# def vq_decode(idx_to_vq, utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/VQ_GAN_codebase/egs/vctk/vc1/", use_gold_spk=False):
+def vq_decode(idx_to_vq, utt_id, idx_seq, spk_idx, pre_trained_model_root="/data3/Espnet_xuankai/espnet/egs2/wsj0_2mix/wsj0_8k_dsf64/", use_gold_spk=False):
     """Run decoding process."""
     vq_seq = torch.LongTensor([idx_to_vq[idx] for idx in idx_seq]).to(idx_seq.device)
     assert vq_seq.shape == idx_seq.shape
-    checkpoint=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/checkpoint-5000000steps.pkl"
-    config=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/config.yml" 
+    # checkpoint=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/checkpoint-5000000steps.pkl"
+    # config=pre_trained_model_root+"exp/train_nodev_all_vctk_conditioned_melgan_vae.v3/config.yml" 
+
+    checkpoint=pre_trained_model_root+"exp/train_nodev_all_spk_8k_vctk_conditioned_melgan_vae.v3.dsf64.finetune/checkpoint-6000000steps.pkl"
+    config=pre_trained_model_root+"exp/train_nodev_all_spk_8k_vctk_conditioned_melgan_vae.v3.dsf64.finetune/config.yml"
     verbose=1
 
     if use_gold_spk: 
@@ -175,7 +180,7 @@ class SeparateSpeech:
         self.hybrid_model = hybrid_model
 
         token_list = hybrid_model.token_list
-        print("token_list:",token_list)
+        print("token_list:",len(token_list), token_list)
         weights = dict(
             asr=asr_weight,
             lm=lm_weight,
@@ -429,6 +434,7 @@ def inference(
     ngpu: int,
     seed: int,
     num_workers: int,
+    tokens_list: str,
     log_level: Union[int, str],
     data_path_and_name_and_type: Sequence[Tuple[str, str, str]],
     key_file: Optional[str],
@@ -464,6 +470,9 @@ def inference(
         device = "cuda"
     else:
         device = "cpu"
+
+    tokens_list = [int(i) for i in open(tokens_list).readlines()]
+    # print(f'{tokens_list}')
 
     # 1. Set random-seed
     set_all_random_seed(seed)
@@ -541,8 +550,8 @@ def inference(
                     # writers[spk][keys[b]] = fs, w[b]
                     asr_writer["text"+str(spk)][keys[b]] = " ".join(map(str, text.data.cpu().numpy()))
                 
-                    wave = vq_decode(keys[b], text, spk_idx, use_gold_spk=use_gold_spk)
-                    writers[spk][keys[b]] = 24000, wave
+                    wave = vq_decode(tokens_list, keys[b], text, spk_idx, use_gold_spk=use_gold_spk)
+                    writers[spk][keys[b]] = fs, wave
         else: # no-prediction of spks
             for spk, text in enumerate(asr_seqs):
                 # text: list of FloatTensor (bs,T)
@@ -552,9 +561,8 @@ def inference(
                 for b in range(batch_size):
                     # writers[spk][keys[b]] = fs, w[b]
                     asr_writer["text"+str(spk)][keys[b]] = " ".join(map(str, text.data.cpu().numpy()))
-                
-                    wave = vq_decode(keys[b], text, 3) # special Target SPK ID
-                    writers[spk][keys[b]] = 24000, wave
+                    wave = vq_decode(tokens_list, keys[b], text, 3, use_gold_spk=use_gold_spk)
+                    writers[spk][keys[b]] = fs, wave
 
 
 def get_parser():
@@ -605,6 +613,7 @@ def get_parser():
         action="append",
     )
     group.add_argument("--key_file", type=str_or_none)
+    group.add_argument("--tokens_list", type=str_or_none)
     group.add_argument("--allow_variable_data_keys", type=str2bool, default=False)
 
     group = parser.add_argument_group("Output data related")
