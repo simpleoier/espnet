@@ -74,6 +74,9 @@ def vq_decode(pre_trained_model_root, use_gold_spk=False,**kwargs):
     print(f"vq:{model.codebook.embedding.weight}")
 
     vq_vectors = model.codebook.embedding.weight.data.numpy()
+    if False:
+        np.save("wsj0_vq_numpy.npy", vq_vectors)
+
     print(f"vq_vec shape:{vq_vectors.shape}")
 
 
