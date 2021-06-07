@@ -1,4 +1,5 @@
 import torch
+from typing import Union
 
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
 
@@ -11,6 +12,7 @@ class ConvEncoder(AbsFrontend):
         channel: int,
         kernel_size: int,
         stride: int,
+        fs: Union[int, str] = 16000,
     ):
         super().__init__()
         self.conv1d = torch.nn.Conv1d(

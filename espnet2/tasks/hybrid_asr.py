@@ -343,7 +343,8 @@ class ASRTask(AbsTask):
         assert check_argument_types()
         if isinstance(args.token_list, str):
             with open(args.token_list, encoding="utf-8") as f:
-                token_list = [line.rstrip() for line in f][:-1]  # Remove the <sos>/<eos> symbol
+                token_list = [line.rstrip() for line in f]  # Remove the <sos>/<eos> symbol
+                token_list = token_list[-1] if token_list[-1] == "<sos>/<eos>" else token_list
 
             # Overwriting token_list to keep it as "portable".
             args.token_list = list(token_list)
