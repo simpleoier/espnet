@@ -43,27 +43,17 @@ else:
     def autocast(enabled=True):
         yield
 
-
-def pick_longer_utt(ref1,ref2,lenghts1,lenghts2):
-    """ ref1,ref2: shape of [bs, label_lens]
-        len1,len2: shape of [bs]
+def convert_back_vq_idx(token_list,phn_ref):
     """
-    longer_ref = []
-    for s1,s2,l1,l2 in zip(ref1,ref2,lenghts1,lenghts2):
-        assert l1==l2, (s1.shape, s2.shape, l1,l2)
-        s1_nopad = s1[:l1]
-        s2_nopad = s2[:l2]
-        s1_mask =  (s1_nopad != 0).int() 
-        s2_mask =  (s2_nopad != 0).int()
-        if s1_mask[-50:].sum() > s2_mask[-50:].sum():
-            longer_ref.append(s1)
-            # print("[s1] s2 last 30:", s1_nopad[-30:], s2_nopad[-30:])
-        else:
-            longer_ref.append(s2)
-            # print("s1 [s2] last 30:", s1_nopad[-30:], s2_nopad[-30:])
-    longer_ref = torch.stack(longer_ref,dim=0) #bs,label_lens
-    assert longer_ref.shape == ref1.shape ==ref2.shape
-    return longer_ref
+    phn_ref: (Bs,T,1)
+    """
+    new_phn_ref=torch.zeros_like(phn_ref)
+    bs, T = phn_ref.shape[:2]
+    for i in range(bs):
+        for j in range(T):
+            new_phn_ref[i,j]=int(token_list[phn_ref[i,j]])
+    return new_phn_ref
+
 
 class ESPnetHybridASRModel(AbsESPnetModel):
     """Hybrid ASR model"""
@@ -91,6 +81,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         use_label_weights: bool = False,
         only_longer_ref: bool = False,
         predict_spk: bool = False,
+        use_vq_dist_loss: bool = False,
     ):
         assert check_argument_types()
         assert rnnt_decoder is None, "Not implemented"
@@ -136,7 +127,16 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         self.dropout_rate = 0.0
         self.cut_begin_end = False
         self.only_longer_ref = only_longer_ref
-        
+        self.use_vq_dist_loss = use_vq_dist_loss
+        if use_vq_dist_loss:
+            vq_emb_path = '/data3/Espnet_xuankai/espnet/egs2/wsj0_2mix/wsj0_8k_dsf64/wsj0_vq_numpy.npy'
+            vq_emb_list=torch.FloatTensor(np.load(vq_emb_path))
+            print("Load the vq_embs from {} successfully.".format(vq_emb_path), vq_emb_list.shape, "n_vq * dim")
+            self.vq_emb = torch.nn.Embedding.from_pretrained(vq_emb_list)
+            self.vq_linear = torch.nn.Linear(encoder.output_size(), vq_emb_list.size(-1))
+            # print(vq_emb_list[10,20:30])
+            # print(self.vq_emb.weight[10,20:30], self.vq_emb.weight.requires_grad)
+
         self.predict_spk = predict_spk
         if self.predict_spk:
             spk_total_num=108 # all spks in vctk (except the p315)
@@ -239,11 +239,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             phn_ref2_lengths,
         ]
 
-        if self.only_longer_ref:
-            longer_phn_ref = pick_longer_utt(phn_ref1,phn_ref2,phn_ref1_lengths,phn_ref2_lengths)
-            longer_target = longer_phn_ref
-            longer_target_lengths =  phn_ref1_lengths
-
         # 1. Encoder
         if self.predict_spk:
             encoder_out, encoder_out_lens, encoder_out_spk, *_ = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
@@ -260,34 +255,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         )
         targets = [phn_ref1, phn_ref2]
 
-        if self.only_longer_ref:
-            loss_ce = self._calc_ce_loss(ys_hats[0],ys_hats_lengths[0],longer_target,longer_target_lengths).mean()
-            all_ys_hats = ys_hats[0]
-            all_targets = longer_target
-            assert all_ys_hats.shape[:2] == all_targets.shape, (all_ys_hats.shape, all_targets.shape)
-            acc_ce = th_accuracy(
-                all_ys_hats.view(-1, self.vocab_size),
-                all_targets,
-                ignore_label=self.ignore_id,
-            )
-            print("ys_hats:", ys_hats[0].shape, ys_hats[0][0].max(-1)[1][800:820])
-            print("longer_targets:", all_targets[0][800:820].data.cpu().numpy())
-            print("predict:", all_ys_hats.max(-1)[1][0][800:820].data.cpu().numpy(), '\n')
-            loss = loss_ce
-
-            stats = dict(
-                loss=loss.detach(),
-                acc=acc_ce,
-            )
-            pad_pred = all_ys_hats.view(
-                all_targets.size(0), all_targets.size(1), all_ys_hats.size(-1)
-            ).argmax(2)
-            acc_unit = (pad_pred == all_targets)
-            print("acc_unit", acc_unit.shape, acc_unit.sum(1)/acc_unit.size(1))
-
-            # force_gatherable: to-device and to-tensor if scalar for DataParallel
-            loss, stats, weight = force_gatherable((loss, stats, batch_size), loss.device)
-            return loss, stats, weight
 
         loss_ce_perm = torch.stack(
             [
@@ -321,18 +288,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         ).argmax(2)
         acc_unit = (pad_pred == all_targets)
         print("acc_unit", acc_unit.shape, acc_unit.sum(1)/acc_unit.size(1))
-        '''
-        if acc_unit.sum(1)[0]/acc_unit.size(1)>0.7:
-            vq_decode('{}_0'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_ys_hats[0].max(-1)[1])
-            vq_decode('{}_1'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_ys_hats[1].max(-1)[1])
-            vq_decode('{}_0_ref'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_targets[0])
-            vq_decode('{}_1_ref'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_targets[1])
-        elif acc_unit.sum(1)[0]/acc_unit.size(1)>0.7:
-            vq_decode('{}_0'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_ys_hats[0].max(-1)[1])
-            vq_decode('{}_1'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_ys_hats[1].max(-1)[1])
-            vq_decode('{}_0_ref'.format(acc_unit.sum(1)[0]/acc_unit.size(1)), all_targets[0])
-            vq_decode('{}_1_ref'.format(acc_unit.sum(1)[1]/acc_unit.size(1)), all_targets[1])
-        '''
 
         if self.predict_spk:
             targets_spk = [spk1_idx, spk2_idx]
@@ -355,6 +310,25 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 ignore_label=self.ignore_id,
             )
             loss_ce = loss_ce + 100 * loss_ce_spk
+        
+        if self.use_vq_dist_loss:
+            # convert back to vq idx to load the embeddings, e.g. 0 --> 78 in WSJ0
+            phn_ref1_vq_raw = convert_back_vq_idx(self.token_list, phn_ref1)
+            phn_ref2_vq_raw = convert_back_vq_idx(self.token_list, phn_ref2)
+            phn_ref1_emb = self.vq_emb(phn_ref1_vq_raw)
+            phn_ref2_emb = self.vq_emb(phn_ref1_vq_raw)
+            # print('emb shape',phn_ref1_emb.shape, phn_ref1.shape)
+            targets_emb = [phn_ref1_emb, phn_ref2_emb] # n_spk * (bs)
+            all_targets_emb = []
+            for i in range(self.num_spkrs):
+                for n in range(batch_size):
+                    all_targets_emb.append(targets_emb[min_perm[n][i]][n])
+            all_targets_emb = torch.stack(all_targets_emb, dim=0) # (bs*spk, )
+            ys_hats_emb =  encoder_out  # n_spk * (bs, dim)
+            all_ys_hats_emb = torch.cat(ys_hats_emb, dim=0) #(bs*spk, dim)
+            all_ys_hats_emb = self.vq_linear(all_ys_hats_emb) #(bs*spk, dim)
+            loss_dist_emb = ((all_ys_hats_emb-all_targets_emb)**2).mean()
+            loss_ce = loss_ce + 100 * loss_dist_emb
 
         predictions = all_ys_hats.view(-1, self.vocab_size).argmax(-1).cpu().numpy()
         (uniq, counts) = np.unique(predictions, return_counts=True)
@@ -370,6 +344,8 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         if self.predict_spk:
             stats.update(dict(acc_spk=acc_ce_spk))
             stats.update(dict(loss_ce_spk=loss_ce_spk.detach()))
+        if self.use_vq_dist_loss:
+            stats.update(dict(loss_vq_dist=loss_dist_emb.detach()))
         print('\n\n')
 
         # force_gatherable: to-device and to-tensor if scalar for DataParallel
