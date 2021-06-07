@@ -1066,6 +1066,7 @@ if ! "${skip_eval}"; then
                 ${python} -m espnet2.bin.hybrid_separation_inference\
                     --ngpu "${_ngpu}" \
                     --fs "${fs}" \
+                    --tokens_list "${token_list}" \
                     --data_path_and_name_and_type "${_data}/${_scp},speech_mix,${_type}" \
                     --key_file "${_logdir}"/keys.JOB.scp \
                     --hybrid_train_config "${asr_exp}"/config.yaml \
