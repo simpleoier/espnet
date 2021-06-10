@@ -81,6 +81,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         use_label_weights: bool = False,
         only_longer_ref: bool = False,
         predict_spk: bool = False,
+        spk_conditional: bool = False,
         use_vq_dist_loss: bool = False,
     ):
         assert check_argument_types()
@@ -125,7 +126,6 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         
 
         self.dropout_rate = 0.0
-        self.cut_begin_end = False
         self.only_longer_ref = only_longer_ref
         self.use_vq_dist_loss = use_vq_dist_loss
         if use_vq_dist_loss:
@@ -138,6 +138,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             # print(self.vq_emb.weight[10,20:30], self.vq_emb.weight.requires_grad)
 
         self.predict_spk = predict_spk
+        self.spk_conditional = spk_conditional
         if self.predict_spk:
             spk_total_num=108 # all spks in vctk (except the p315)
             self.ce_spk = torch.nn.Linear(encoder.output_size(), spk_total_num)
@@ -245,6 +246,13 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         else:
             encoder_out, encoder_out_lens, *_ = self.encode(speech_mix, speech_mix_lengths) # n_spk * (bs, lens, enc_dim)
 
+        if self.predict_spk:
+            spk_condition_all= encoder_out_spk 
+            if self.spk_conditional:
+                spk_condition = spk_condition_all
+            else:
+                spk_condition = None
+
         ys_hats, ys_hats_lengths, phn_ref1, phn_ref2 = self._compute_output_layer(
             encoder_out,
             encoder_out_lens,
@@ -252,6 +260,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
             phn_ref2,
             phn_ref1_lengths,
             phn_ref2_lengths,
+            spk_condition,
         )
         targets = [phn_ref1, phn_ref2]
 
@@ -593,6 +602,7 @@ class ESPnetHybridASRModel(AbsESPnetModel):
         phn_ref2,
         phn_ref1_lengths,
         phn_ref2_lengths,
+        spks_condition = None,
     ):
         if isinstance(encoder_out, list):
             if encoder_out[0].shape[1] < phn_ref1.shape[1]:
@@ -604,22 +614,18 @@ class ESPnetHybridASRModel(AbsESPnetModel):
                 encoder_out[0] = encoder_out[0][:, :phn_ref1.shape[1]].contiguous()
                 encoder_out[1] = encoder_out[1][:, :phn_ref1.shape[1]].contiguous()
 
-            if self.cut_begin_end:
-                assert encoder_out[0].shape[1]==phn_ref1.shape[1]==phn_ref2.shape[1], (encoder_out[0].shape,phn_ref1.shape,phn_ref2.shape)
-                cut_begin = int(0.2 * phn_ref1_lengths.max())
-                cut_len = int(0.5 * phn_ref1_lengths.max())
-                cut_end = int(0.2 * phn_ref1_lengths.max()) + cut_len
-                encoder_out=[enc[:,cut_begin:cut_end] for enc in encoder_out]
-                encoder_out_lens= [torch.ones_like(enc) * int(cut_len) for enc in encoder_out_lens]
-                targets = [
-                    phn_ref1[:, cut_begin : cut_end],
-                    phn_ref2[:, cut_begin : cut_end],
-                ]
-                targets_lengths = encoder_out_lens
-
-            ys_hats = [
-                self.ce_lo(F.dropout(enc_out, p=self.dropout_rate)) for enc_out in encoder_out
-            ] # n_spk * (bs, lens, proj)
+            if spks_condition is not None: 
+                # spkk_condition: list, n_spk*(bs,Proj)
+                ys_hats = []
+                for enc_out, spk_condition in zip(encoder_out,spks_condition):
+                    # TODO: Just use the element-wise sum for now
+                    print("enc_out,spk_cond:", enc_out.shape,spk_condition.shape)
+                    enc_out_spk = enc_out + spk_condition.unsqueeze(1) #  (bs, lens, dim) + (bs,1,dim), broadcasting in time-axis
+                    ys_hats.append(self.ce_lo(F.dropout(enc_out_spk, p=self.dropout_rate))) # (bs, lens, proj)
+            else:
+                ys_hats = [
+                    self.ce_lo(F.dropout(enc_out, p=self.dropout_rate)) for enc_out in encoder_out
+                ] # n_spk * (bs, lens, proj)
             ys_hats_lengths = encoder_out_lens
         else:
             if encoder_out.shape[1] < phn_ref1.shape[1]:
