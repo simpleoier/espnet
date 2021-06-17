@@ -477,3 +477,69 @@ class PhonemePreprocessor_multi(AbsPreprocessor):
             data.pop("speakers_str")
         assert check_return_type(data)
         return data
+
+class VQPreprocessor_multi(AbsPreprocessor):
+    def __init__(
+        self,
+        train: bool,
+        token_type: str = None,
+        token_list: Union[Path, str, Iterable[str]] = None,
+        bpemodel: Union[Path, str, Iterable[str]] = None,
+        text_cleaner: Collection[str] = None,
+        g2p_type: str = None,
+        unk_symbol: str = "<unk>",
+        space_symbol: str = "<space>",
+        non_linguistic_symbols: Union[Path, str, Iterable[str]] = None,
+        delimiter: str = None,
+        vq_name: list = ["vq"],
+        text_name: list = ["text"],
+    ):
+        super().__init__(train)
+        self.train = train
+        self.vq_name = vq_name
+        self.text_name = text_name
+
+        if token_type is not None:
+            if token_list is None:
+                raise ValueError("token_list is required if token_type is not None")
+            self.text_cleaner = TextCleaner(text_cleaner)
+
+            self.tokenizer = build_tokenizer(
+                token_type=token_type,
+                bpemodel=bpemodel,
+                delimiter=delimiter,
+                space_symbol=space_symbol,
+                non_linguistic_symbols=non_linguistic_symbols,
+                g2p_type=g2p_type,
+            )
+            self.token_id_converter = TokenIDConverter(
+                token_list=token_list,
+                unk_symbol=unk_symbol,
+            )
+        else:
+            self.text_cleaner = None
+            self.tokenizer = None
+            self.token_id_converter = None
+
+    def __call__(
+        self, uid: str, data: Dict[str, Union[str, np.ndarray]]
+    ) -> Dict[str, np.ndarray]:
+        assert check_argument_types()
+
+        for vq_n in self.vq_name:
+            if vq_n in data:
+                vq_ints = list(map(int,data[vq_n].strip().split()))
+                data[vq_n] = np.array(vq_ints, dtype=np.int64)
+
+        for text_n in self.text_name:
+            if text_n in data and self.tokenizer is not None:
+                text = data[text_n]
+                text = self.text_cleaner(text)
+                tokens = self.tokenizer.text2tokens(text)
+                text_ints = self.token_id_converter.tokens2ids(tokens)
+                if None in text_ints:
+                    assert 1==0, (text, tokens, text_ints, uid)
+                data[text_n] = np.array(text_ints, dtype=np.int64)
+
+        assert check_return_type(data)
+        return data
